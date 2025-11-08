@@ -4,15 +4,15 @@ NVCC = nvcc
 LINKER = nvcc
 SYSTEM_GXX := $(shell which g++)
 
-SRC_DIR = ./cupdlpx
+SRC_DIR = ./src
 BUILD_DIR = ./build
 
 # CFLAGS for C compiler (gcc)
-CFLAGS = -I. -I$(CUDA_HOME)/include -fPIC -O3 -Wall -Wextra -g
+CFLAGS = -I. -I$(CUDA_HOME)/include -Iinclude -Iinternal -fPIC -O3 -Wall -Wextra -g
 
 # NVCCFLAGS for CUDA compiler (nvcc)
 GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | sed 's/\.//')
-NVCCFLAGS = -I. -I$(CUDA_HOME)/include -O3 -g \
+NVCCFLAGS = -I. -I$(CUDA_HOME)/include -Iinclude -Iinternal -O3 -g \
             -gencode arch=compute_$(GPU_ARCH),code=sm_$(GPU_ARCH) \
             -Xcompiler -fPIC  -Xcompiler -gdwarf-4 -ccbin $(SYSTEM_GXX)
 
@@ -25,7 +25,7 @@ GEN_DIR := $(BUILD_DIR)/generated
 VERSION := $(shell sed -n 's/^version *= *"\(.*\)"/\1/p' pyproject.toml)
 VERSION_H := $(GEN_DIR)/version.h
 
-$(VERSION_H): $(SRC_DIR)/version.h.in pyproject.toml
+$(VERSION_H): version.h.in pyproject.toml
 	@mkdir -p $(GEN_DIR)
 	sed 's/@CUPDLPX_VERSION@/$(VERSION)/g' $< > $@
 	@echo "generated $@ (version $(VERSION))"

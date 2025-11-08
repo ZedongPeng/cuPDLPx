@@ -138,7 +138,7 @@ cupdlpx_result_t* solve_lp_problem(
 
 #### Example: Solving a Small LP
 ```c
-#include "cupdlpx/interface.h"
+#include "cupdlpx.h"
 #include <math.h>
 #include <stdio.h>
 
