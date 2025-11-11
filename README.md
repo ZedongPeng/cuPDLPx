@@ -27,7 +27,7 @@ Clone the repository and compile the project using `CMake`.
 git clone git@github.com:MIT-Lu-Lab/cuPDLPx.git
 cd cuPDLPx
 cmake -B build
-cmake --build . --clean-first
+cmake --build build --clean-first
 ```
 This will create the solver binary at `./build/cupdlpx`.
 
