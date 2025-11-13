@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 # Project config
 project(cupdlpx LANGUAGES C CXX CUDA)
 
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+
 # C/C++ standards
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
@@ -138,6 +140,7 @@ target_link_libraries(cupdlpx_core ${CORE_LINK_LIBS})
 set_target_properties(cupdlpx_core PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CUDA_SEPARABLE_COMPILATION ON
+  CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
 
 # -----------------------------------------------------------------------------
@@ -224,14 +227,20 @@ endif()
 # -----------------------------------------------------------------------------
 # 6. Install Targets
 # -----------------------------------------------------------------------------
-install(TARGETS cupdlpx_core cupdlpx_shared cupdlpx_cli
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
-)
+if (CUPDLPX_BUILD_PYTHON)
+    install(DIRECTORY include/
+        DESTINATION include/
+        FILES_MATCHING PATTERN "*.h"
+    )
 
-# Install headers (only public headers)
-install(DIRECTORY include/
-    DESTINATION include/
-    FILES_MATCHING PATTERN "*.h"
-)
+else()
+    install(TARGETS cupdlpx_core cupdlpx_shared cupdlpx_cli
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin
+    )
+    install(DIRECTORY include/
+        DESTINATION include/
+        FILES_MATCHING PATTERN "*.h"
+    )
+endif()
