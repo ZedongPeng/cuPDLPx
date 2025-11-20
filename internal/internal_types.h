@@ -125,6 +125,15 @@ typedef struct
 
 	double feasibility_polishing_time;
 	int feasibility_iteration;
+
+	// --- CUDA Graph Related Fields ---
+    cudaGraph_t graph;              // Handle to the captured graph
+    cudaGraphExec_t graph_instance; // Executable graph instance
+    bool graph_created;             // Flag indicating if the graph is instantiated
+	bool graph_needs_update;
+    cudaStream_t stream;            // Dedicated stream for solver operations
+    double *d_halpern_weight;       // Device pointer for dynamic Halpern weight
+
 } pdhg_solver_state_t;
 
 typedef struct

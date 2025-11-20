@@ -585,7 +585,7 @@ void compute_residual(pdhg_solver_state_t *state)
         state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
         CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
 
-    compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
+    compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual, state->primal_product,
         state->constraint_lower_bound, state->constraint_upper_bound,
         state->pdhg_dual_solution, state->dual_residual, state->dual_product,
