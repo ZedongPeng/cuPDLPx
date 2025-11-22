@@ -18,6 +18,7 @@ limitations under the License.
 #include "mps_parser.h"
 #include "solver.h"
 #include "utils.h"
+#include "presolve.h"
 #include <getopt.h>
 #include <libgen.h>
 #include <stdbool.h>
@@ -179,6 +180,8 @@ void print_usage(const char *prog_name)
                     "polish tolerance (default: 1e-6).\n");
     fprintf(stderr, "  -f  --feasibility_polishing         Enable feasibility " 
                     "use feasibility polishing (default: false).\n");
+    fprintf(stderr, "  -p, --presolve "
+                    "enable presolving (default: false).\n");
 }
 
 int main(int argc, char *argv[])
@@ -196,10 +199,11 @@ int main(int argc, char *argv[])
         {"eps_infeas_detect", required_argument, 0, 1005},
         {"eps_feas_polish", required_argument, 0, 1006},
         {"feasibility_polishing", no_argument, 0, 'f'},
+        {"presolve", no_argument, 0, 'p'},
         {0, 0, 0, 0}};
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "hvf", long_options, NULL)) != -1)
+    while ((opt = getopt_long(argc, argv, "hvfp", long_options, NULL)) != -1)
     {
         switch (opt)
         {
@@ -229,6 +233,9 @@ int main(int argc, char *argv[])
             break;
         case 'f':                  // --feasibility_polishing
             params.feasibility_polishing = true;
+            break;
+        case 'p':                  // --presolve
+            params.use_presolve = true;
             break;
         case '?': // Unknown option
             return 1;
@@ -262,7 +269,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    cupdlpx_result_t *result = optimize(&params, problem);
+    // cupdlpx_result_t *result = optimize(&params, problem);
+
+    cupdlpx_result_t *result = NULL;
+
+    if (params.use_presolve) {
+        if (params.verbose) printf("Solving with PSLP presolve...\n");
+        result = solve_with_pslp(problem, &params);
+    } else {
+        // Original direct solving logic
+        // According to cupdlpx.h, the function name is solve_lp_problem
+        result = solve_lp_problem(problem, &params); 
+    }
 
     if (result == NULL)
     {
