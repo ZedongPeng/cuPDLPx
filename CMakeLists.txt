@@ -72,6 +72,17 @@ if (CUPDLPX_BUILD_PYTHON)
     find_package(Python3 COMPONENTS Interpreter REQUIRED) # For versioning script and pybind11
 endif()
 
+include(FetchContent)
+
+FetchContent_Declare(
+  pslp
+  GIT_REPOSITORY https://github.com/dance858/PSLP.git
+  GIT_TAG        main
+)
+
+FetchContent_MakeAvailable(pslp)
+include_directories(${pslp_SOURCE_DIR}/PSLP)
+
 # -----------------------------------------------------------------------------
 # SOURCE DISCOVERY & TARGET DEFINITION
 # -----------------------------------------------------------------------------
@@ -97,6 +108,7 @@ set(CORE_LINK_LIBS PUBLIC
   CUDA::cublas
   CUDA::cusparse
   ZLIB::ZLIB
+  PSLP
 )
 
 # -----------------------------------------------------------------------------

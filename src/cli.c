@@ -18,6 +18,7 @@ limitations under the License.
 #include "mps_parser.h"
 #include "solver.h"
 #include "utils.h"
+#include "presolve.h"
 #include <getopt.h>
 #include <libgen.h>
 #include <stdbool.h>
@@ -179,6 +180,8 @@ void print_usage(const char *prog_name)
                     "polish tolerance (default: 1e-6).\n");
     fprintf(stderr, "  -f  --feasibility_polishing         Enable feasibility " 
                     "use feasibility polishing (default: false).\n");
+    fprintf(stderr, "  -p, --presolve "
+                    "enable presolving (default: false).\n");
 }
 
 int main(int argc, char *argv[])
@@ -196,10 +199,11 @@ int main(int argc, char *argv[])
         {"eps_infeas_detect", required_argument, 0, 1005},
         {"eps_feas_polish", required_argument, 0, 1006},
         {"feasibility_polishing", no_argument, 0, 'f'},
+        {"presolve", no_argument, 0, 'p'},
         {0, 0, 0, 0}};
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "hvf", long_options, NULL)) != -1)
+    while ((opt = getopt_long(argc, argv, "hvfp", long_options, NULL)) != -1)
     {
         switch (opt)
         {
@@ -229,6 +233,9 @@ int main(int argc, char *argv[])
             break;
         case 'f':                  // --feasibility_polishing
             params.feasibility_polishing = true;
+            break;
+        case 'p':                  // --presolve
+            params.use_presolve = true;
             break;
         case '?': // Unknown option
             return 1;

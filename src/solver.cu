@@ -19,6 +19,7 @@ limitations under the License.
 #include "preconditioner.h"
 #include "solver.h"
 #include "utils.h"
+#include "presolve.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cusparse.h>
@@ -97,9 +98,30 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                            const lp_problem_t *original_problem)
 {
     print_initial_info(params, original_problem);
-    rescale_info_t *rescale_info = rescale_problem(params, original_problem);
-    pdhg_solver_state_t *state =
-        initialize_solver_state(original_problem, rescale_info);
+
+    cupdlpx_presolve_info_t *presolve_info = NULL;
+    const lp_problem_t *problem_to_solve = original_problem;
+
+    if (params->use_presolve) {
+        if (params->verbose) printf("Running Presolve...\n");
+        
+        presolve_info = pslp_presolve(original_problem, params);
+        
+        if (!presolve_info) {
+             fprintf(stderr, "Presolve failed.\n");
+             return NULL;
+        }
+
+        if (presolve_info->problem_solved_during_presolve) {
+             cupdlpx_result_t *early_result = pslp_postsolve(presolve_info, NULL, original_problem);
+             cupdlpx_presolve_info_free(presolve_info);
+             return early_result;
+        }
+
+        problem_to_solve = presolve_info->reduced_problem;
+    }
+    rescale_info_t *rescale_info = rescale_problem(params, problem_to_solve);
+    pdhg_solver_state_t *state = initialize_solver_state(problem_to_solve, rescale_info);
 
     rescale_info_free(rescale_info);
     initialize_step_size_and_primal_weight(state, params);
@@ -164,9 +186,22 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         feasibility_polish(params, state);
     }
 
-    cupdlpx_result_t *results = create_result_from_state(state);
+    cupdlpx_result_t *current_result = create_result_from_state(state);
+    
+    cupdlpx_result_t *final_result = NULL;
+
+    if (params->use_presolve && presolve_info) {
+        final_result = pslp_postsolve(presolve_info, current_result, original_problem);
+        
+        cupdlpx_result_free(current_result);
+        cupdlpx_presolve_info_free(presolve_info);
+    } 
+    else {
+        final_result = current_result;
+    }
+
     pdhg_solver_state_free(state);
-    return results;
+    return final_result;
 }
 
 static pdhg_solver_state_t *
@@ -977,6 +1012,8 @@ void set_default_parameters(pdhg_parameters_t *params)
     params->restart_params.k_i = 0.01;
     params->restart_params.k_d = 0.0;
     params->restart_params.i_smooth = 0.3;
+
+    params->use_presolve = false;
 }
 
 //Feasibility Polishing
