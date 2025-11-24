@@ -1,49 +1,34 @@
 #include "cupdlpx.h"
 #include "PSLP_API.h"
+#include "PSLP_inf.h"
+#include "PSLP_sol.h"
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
 #include <math.h>
 
-/* * Helper function: Convert PSLP's PresolvedProblem to cuPDLPx's lp_problem_t 
- */
-// lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
-//     // 1. Build matrix descriptor
-//     matrix_desc_t desc;
-//     desc.m = reduced_prob->m;
-//     desc.n = reduced_prob->n;
-//     desc.fmt = matrix_csr;
-//     desc.zero_tolerance = 0.0; // Use default value
+void sanitize_infinity_for_pslp(double* arr, int n, double pslp_inf_val) {
+    for (int i = 0; i < n; ++i) {
+        if (isinf(arr[i]) || fabs(arr[i]) >= pslp_inf_val) {
+            arr[i] = (arr[i] > 0) ? pslp_inf_val : -pslp_inf_val;
+        }
+    }
+}
 
-//     // Map CSR data (Both PSLP and cuPDLPx use 0-based int and double, pointers can be passed directly)
-//     desc.data.csr.nnz = reduced_prob->nnz;
-//     desc.data.csr.row_ptr = reduced_prob->Ap;
-//     desc.data.csr.col_ind = reduced_prob->Ai;
-//     desc.data.csr.vals = reduced_prob->Ax;
+#define CUPDLP_INF std::numeric_limits<double>::infinity()
 
-//     // 2. Create LP problem
-//     // Here, cuPDLPx's create_lp_problem will handle deep copying data into its own structure
-//     // PSLP's lhs/rhs correspond to constraint_lower/upper_bound
-//     // PSLP's lbs/ubs correspond to variable_lower/upper_bound
-//     double obj_const = 0.0; // The offset after presolve is usually included in the recovery step
-
-//     lp_problem_t* gpu_prob = create_lp_problem(
-//         reduced_prob->c,
-//         &desc,
-//         reduced_prob->lhs, // con_lb
-//         reduced_prob->rhs, // con_ub
-//         reduced_prob->lbs, // var_lb
-//         reduced_prob->ubs, // var_ub
-//         &obj_const
-//     );
-
-//     return gpu_prob;
-// }
+void restore_infinity_for_cupdlpx(double* arr, int n, double pslp_inf_val) {
+    for (int i = 0; i < n; ++i) {
+        if (arr[i] >= pslp_inf_val * 0.99) { 
+            arr[i] = INFINITY;
+        }
+        else if (arr[i] <= -pslp_inf_val * 0.99) {
+            arr[i] = -INFINITY;
+        }
+    }
+}
 
 lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
-    // [Fix 1] The struct must be initialized to zero. 
-    // Since matrix_desc_t contains a union, garbage memory on the stack can cause 
-    // cuPDLPx to read the wrong data format (e.g., interpreting CSR pointers as Dense pointers).
     matrix_desc_t desc;
     memset(&desc, 0, sizeof(matrix_desc_t)); 
 
@@ -58,20 +43,15 @@ lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
     desc.data.csr.col_ind = reduced_prob->Ai;
     desc.data.csr.vals = reduced_prob->Ax;
 
-    // [Debug] Print metadata to verify data integrity before passing to GPU
     printf("DEBUG: Converting to cuPDLPx. Size %dx%d, NNZ %d\n", desc.m, desc.n, desc.data.csr.nnz);
-    
-    // Optional: Print the first few bounds to ensure they aren't corrupted
-    // printf("DEBUG: First 5 bounds (LHS/RHS): ");
-    // for(int i=0; i<5 && i<reduced_prob->m; i++) {
-    //     printf("[%.1e, %.1e] ", reduced_prob->lhs[i], reduced_prob->rhs[i]);
-    // }
-    // printf("\n");
 
     double obj_const = 0.0; 
 
-    // [Fix 2] Create the LP problem
-    // cupdlpx's create_lp_problem will handle the deep copy of the data
+    restore_infinity_for_cupdlpx(reduced_prob->lhs, reduced_prob->m, PSLP_INF);
+    restore_infinity_for_cupdlpx(reduced_prob->rhs, reduced_prob->m, PSLP_INF);
+    restore_infinity_for_cupdlpx(reduced_prob->lbs, reduced_prob->n, PSLP_INF);
+    restore_infinity_for_cupdlpx(reduced_prob->ubs, reduced_prob->n, PSLP_INF);
+
     lp_problem_t* gpu_prob = create_lp_problem(
         reduced_prob->c,
         &desc,
@@ -92,6 +72,10 @@ cupdlpx_result_t* solve_with_pslp(
     lp_problem_t *original_prob, 
     pdhg_parameters_t *params
 ) {
+    sanitize_infinity_for_pslp(original_prob->constraint_lower_bound, original_prob->num_constraints, PSLP_INF);
+    sanitize_infinity_for_pslp(original_prob->constraint_upper_bound, original_prob->num_constraints, PSLP_INF);
+    sanitize_infinity_for_pslp(original_prob->variable_lower_bound, original_prob->num_variables, PSLP_INF);
+    sanitize_infinity_for_pslp(original_prob->variable_upper_bound, original_prob->num_variables, PSLP_INF);
     // ---------------------------------------------------------
     // 1. Initialize PSLP and run
     // ---------------------------------------------------------
@@ -99,10 +83,6 @@ cupdlpx_result_t* solve_with_pslp(
     if (params->verbose) {
         settings->verbose = true;
     }
-    // You can further adjust settings based on cupdlpx's params
-
-    // Extract data from cuPDLPx's lp_problem_t and pass to PSLP
-    // Note: cuPDLPx uses int* and double*, compatible with PSLP
     Presolver *presolver = new_presolver(
         original_prob->constraint_matrix_values,
         original_prob->constraint_matrix_col_indices,
@@ -130,8 +110,6 @@ cupdlpx_result_t* solve_with_pslp(
     // Handle cases where presolve directly detects infeasible/unbounded status
     if (status & INFEASIBLE || status & UNBOUNDED) {
         printf("Problem solved by presolver (Infeasible/Unbounded).\n");
-        // Should construct a cupdlpx_result_t indicating infeasibility and return it here
-        // Returning NULL for simplicity, needs completion in practice
         free_presolver(presolver);
         free_settings(settings);
         return NULL; 
@@ -151,11 +129,12 @@ cupdlpx_result_t* solve_with_pslp(
     // ---------------------------------------------------------
     // 3. Postsolve (Recover original solution)
     // ---------------------------------------------------------
-    // Prepare z (reduced costs); if cuPDLPx doesn't output z, we need to calculate it or pass zeros
-    // postsolve requires: x, y, z, obj_val
     int n_red = presolver->reduced_prob->n;
     double *z_dummy = (double*)calloc(n_red, sizeof(double)); 
     // TODO: Strictly speaking, z = c - A'y should be calculated, but if it doesn't affect primal recovery, 0 can be used
+    // for (int j = 0; j < n_red; ++j) {
+    //     z_dummy[j] = presolver->reduced_prob->c[j]; // z = c
+    // }
 
     postsolve(presolver, 
               reduced_result->primal_solution, 
@@ -182,7 +161,7 @@ cupdlpx_result_t* solve_with_pslp(
     
     // Update final objective function value
     final_result->primal_objective_value = presolver->sol->obj;
-    // Note: Dual obj might also need update, assuming small gap here
+    // TODO: Dual objective value recovery
 
     // ---------------------------------------------------------
     // 5. Cleanup
