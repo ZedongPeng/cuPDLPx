@@ -44,8 +44,6 @@ lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
     desc.data.csr.col_ind = reduced_prob->Ai;
     desc.data.csr.vals = reduced_prob->Ax;
 
-    double obj_const = 0.0; 
-
     restore_infinity_for_cupdlpx(reduced_prob->lhs, reduced_prob->m, PSLP_INF);
     restore_infinity_for_cupdlpx(reduced_prob->rhs, reduced_prob->m, PSLP_INF);
     restore_infinity_for_cupdlpx(reduced_prob->lbs, reduced_prob->n, PSLP_INF);
@@ -58,7 +56,7 @@ lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
         reduced_prob->rhs, // constraint upper bound
         reduced_prob->lbs, // variable lower bound
         reduced_prob->ubs, // variable upper bound
-        &obj_const
+        &reduced_prob->obj_offset
     );
 
     return gpu_prob;
@@ -81,6 +79,7 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
     if (params->verbose) {
         info->settings->verbose = true;
     }
+    // info->settings->relax_bounds = false;
 
     // 3. Init Presolver
     info->presolver = new_presolver(
@@ -113,7 +112,6 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
                    info->presolver->reduced_prob->m, info->presolver->reduced_prob->n);
         }
         info->reduced_problem = convert_pslp_to_cupdlpx(info->presolver->reduced_prob);
-        info->reduced_problem->objective_constant = original_prob->objective_constant;
     }
 
     info->presolve_time = (double)(clock() - start_time) / CLOCKS_PER_SEC;
@@ -133,16 +131,12 @@ cupdlpx_result_t* pslp_postsolve(cupdlpx_presolve_info_t *info,
 
     if (!reduced_result || !info->presolver) return NULL;
 
-    int n_red = info->presolver->reduced_prob->n;
-    double *z_dummy = (double*)calloc(n_red, sizeof(double)); 
 
     postsolve(info->presolver, 
               reduced_result->primal_solution, 
               reduced_result->dual_solution, 
-              z_dummy, 
+              reduced_result->reduced_cost,
               reduced_result->primal_objective_value);
-    
-    free(z_dummy);
 
     cupdlpx_result_t *final_result = (cupdlpx_result_t*)malloc(sizeof(cupdlpx_result_t));
     *final_result = *reduced_result; 

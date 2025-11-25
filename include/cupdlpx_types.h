@@ -99,6 +99,7 @@ extern "C"
 
 		double *primal_solution;
 		double *dual_solution;
+		double *reduced_cost;
 
 		int total_count;
 		double rescaling_time_sec;

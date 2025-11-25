@@ -204,6 +204,22 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     return final_result;
 }
 
+__global__ void compute_and_rescale_reduced_cost_kernel(
+    double *reduced_cost,
+    const double *objective,
+    const double *dual_product,
+    const double *variable_rescaling, 
+    const double objective_vector_rescaling,
+    const double constraint_bound_rescaling,
+    int n_vars)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n_vars)
+    {
+        reduced_cost[i] = (objective[i] - dual_product[i]) * variable_rescaling[i] / objective_vector_rescaling;
+    }
+}
+
 static pdhg_solver_state_t *
 initialize_solver_state(const lp_problem_t *original_problem,
                         const rescale_info_t *rescale_info)
@@ -951,18 +967,44 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state)
     cupdlpx_result_t *results =
         (cupdlpx_result_t *)safe_calloc(1, sizeof(cupdlpx_result_t));
 
+    // Compute reduced cost
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol,
+                                          state->pdhg_dual_solution));
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, 
+                                          state->dual_product));
+
+    CUSPARSE_CHECK(cusparseSpMV(
+        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+        state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
+        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
+
+    compute_and_rescale_reduced_cost_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK>>>(
+        state->dual_slack,
+        state->objective_vector,
+        state->dual_product,
+        state->variable_rescaling,
+        state->objective_vector_rescaling,
+        state->constraint_bound_rescaling,
+        state->num_variables
+    );
+
     rescale_solution(state);
 
     results->primal_solution =
         (double *)safe_malloc(state->num_variables * sizeof(double));
     results->dual_solution =
         (double *)safe_malloc(state->num_constraints * sizeof(double));
+    results->reduced_cost = 
+        (double *)safe_malloc(state->num_variables * sizeof(double));
 
     CUDA_CHECK(cudaMemcpy(results->primal_solution, state->pdhg_primal_solution,
                           state->num_variables * sizeof(double),
                           cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(results->dual_solution, state->pdhg_dual_solution,
                           state->num_constraints * sizeof(double),
+                          cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(results->reduced_cost, state->dual_slack,
+                          state->num_variables * sizeof(double),
                           cudaMemcpyDeviceToHost));
 
     results->num_variables = state->num_variables;
