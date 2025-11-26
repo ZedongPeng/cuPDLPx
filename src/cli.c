@@ -140,6 +140,29 @@ void save_solver_summary(const cupdlpx_result_t *result, const char *output_dir,
         fprintf(outfile, "Feasibility Polishing Time (sec): %e\n", result->feasibility_polishing_time);
         fprintf(outfile, "Feasibility Polishing Iteration Count: %d\n", result->feasibility_iteration);
     }
+    if (result->presolve_stats.n_cols_original > 0) {
+        fprintf(outfile, "Original Rows: %d\n", result->presolve_stats.n_rows_original);
+        fprintf(outfile, "Original Cols: %d\n", result->presolve_stats.n_cols_original);
+        fprintf(outfile, "Original NNZ: %d\n", result->presolve_stats.nnz_original);
+        fprintf(outfile, "Reduced Rows: %d\n", result->presolve_stats.n_rows_reduced);
+        fprintf(outfile, "Reduced Cols: %d\n", result->presolve_stats.n_cols_reduced);
+        fprintf(outfile, "Reduced NNZ: %d\n", result->presolve_stats.nnz_reduced);
+
+        fprintf(outfile, "NNZ Removed Trivial: %d\n", result->presolve_stats.nnz_removed_trivial);
+        fprintf(outfile, "NNZ Removed Fast: %d\n", result->presolve_stats.nnz_removed_fast);
+        fprintf(outfile, "NNZ Removed Primal Propagation: %d\n", result->presolve_stats.nnz_removed_primal_propagation);
+        fprintf(outfile, "NNZ Removed Parallel Rows: %d\n", result->presolve_stats.nnz_removed_parallel_rows);
+        fprintf(outfile, "NNZ Removed Parallel Cols: %d\n", result->presolve_stats.nnz_removed_parallel_cols);
+
+        fprintf(outfile, "Presolve Total Time (sec): %e\n", result->presolve_stats.presolve_total_time);
+        fprintf(outfile, "Presolve Time Init (sec): %e\n", result->presolve_stats.ps_time_init);
+        fprintf(outfile, "Presolve Time Fast (sec): %e\n", result->presolve_stats.ps_time_fast);
+        fprintf(outfile, "Presolve Time Medium (sec): %e\n", result->presolve_stats.ps_time_medium);
+        fprintf(outfile, "Presolve Time Primal Proppagation (sec): %e\n", result->presolve_stats.ps_time_primal_propagation);
+        fprintf(outfile, "Presolve Time Parallel Rows (sec): %e\n", result->presolve_stats.ps_time_parallel_rows);
+        fprintf(outfile, "Presolve Time Parallel Cols (sec): %e\n", result->presolve_stats.ps_time_parallel_cols);
+        fprintf(outfile, "Postsolve Time (sec): %e\n", result->presolve_stats.ps_time_post_solve);
+    }
     fclose(outfile);
     free(file_path);
 }

@@ -2,7 +2,8 @@
 #define PRESOLVE_H
 
 #include "cupdlpx.h"
-#include "PSLP_API.h" 
+#include "PSLP_API.h"
+#include "PSLP_stats.h"
 
 #ifdef __cplusplus
 extern "C" {

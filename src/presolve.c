@@ -124,13 +124,17 @@ cupdlpx_result_t* pslp_postsolve(cupdlpx_presolve_info_t *info,
     
     if (info->problem_solved_during_presolve) {
         cupdlpx_result_t *res = (cupdlpx_result_t*)calloc(1, sizeof(cupdlpx_result_t));
-        res->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE; // Simplified
+        
+        if (info->presolver && info->presolver->stats) {
+            res->presolve_stats = *(info->presolver->stats);
+        }
+
+        res->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE;
         res->cumulative_time_sec = info->presolve_time;
         return res;
     }
 
     if (!reduced_result || !info->presolver) return NULL;
-
 
     postsolve(info->presolver, 
               reduced_result->primal_solution, 
@@ -139,7 +143,12 @@ cupdlpx_result_t* pslp_postsolve(cupdlpx_presolve_info_t *info,
               reduced_result->primal_objective_value);
 
     cupdlpx_result_t *final_result = (cupdlpx_result_t*)malloc(sizeof(cupdlpx_result_t));
+    
     *final_result = *reduced_result; 
+
+    if (info->presolver->stats != NULL) {
+        final_result->presolve_stats = *(info->presolver->stats);
+    }
 
     final_result->primal_solution = (double*)malloc(original_prob->num_variables * sizeof(double));
     final_result->dual_solution = (double*)malloc(original_prob->num_constraints * sizeof(double));

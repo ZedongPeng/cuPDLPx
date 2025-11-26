@@ -99,10 +99,14 @@ extern "C"
 
     void print_initial_info(const pdhg_parameters_t *params, const lp_problem_t *problem);
 
-    void pdhg_final_log(
-        const pdhg_solver_state_t *solver_state,
-        bool verbose,
-        termination_reason_t termination_reason);
+    // void pdhg_final_log(
+    //     const pdhg_solver_state_t *solver_state,
+    //     bool verbose,
+    //     termination_reason_t termination_reason);
+    void pdhg_final_log(const pdhg_solver_state_t *state, 
+                    const PresolveStats *stats,
+                    bool verbose,
+                    termination_reason_t reason);
 
     void display_iteration_stats(const pdhg_solver_state_t *solver_state, bool verbose);
 

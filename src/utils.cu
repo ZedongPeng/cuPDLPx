@@ -364,7 +364,27 @@ void print_initial_info(const pdhg_parameters_t *params,
            "------------------\n");
 }
 
-void pdhg_final_log(const pdhg_solver_state_t *state, bool verbose,
+// void pdhg_final_log(const pdhg_solver_state_t *state, bool verbose,
+//                     termination_reason_t reason)
+// {
+//     if (verbose)
+//     {
+//         printf("-------------------------------------------------------------------"
+//                "--------------------\n");
+//     }
+//     printf("Solution Summary\n");
+//     printf("  Status        : %s\n", termination_reason_to_string(reason));
+//     printf("  Iterations    : %d\n", state->total_count - 1);
+//     printf("  Solve time    : %.3g sec\n", state->cumulative_time_sec);
+//     printf("  Primal obj    : %.10g\n", state->primal_objective_value);
+//     printf("  Dual obj      : %.10g\n", state->dual_objective_value);
+//     printf("  Primal infeas : %.3e\n", state->relative_primal_residual);
+//     printf("  Dual infeas   : %.3e\n", state->relative_dual_residual);
+// }
+
+void pdhg_final_log(const pdhg_solver_state_t *state, 
+                    const PresolveStats *stats,
+                    bool verbose,
                     termination_reason_t reason)
 {
     if (verbose)
@@ -373,13 +393,39 @@ void pdhg_final_log(const pdhg_solver_state_t *state, bool verbose,
                "--------------------\n");
     }
     printf("Solution Summary\n");
-    printf("  Status        : %s\n", termination_reason_to_string(reason));
-    printf("  Iterations    : %d\n", state->total_count - 1);
-    printf("  Solve time    : %.3g sec\n", state->cumulative_time_sec);
-    printf("  Primal obj    : %.10g\n", state->primal_objective_value);
-    printf("  Dual obj      : %.10g\n", state->dual_objective_value);
-    printf("  Primal infeas : %.3e\n", state->relative_primal_residual);
-    printf("  Dual infeas   : %.3e\n", state->relative_dual_residual);
+    printf("  Status             : %s\n", termination_reason_to_string(reason));
+    printf("  Iterations         : %d\n", state->total_count - 1);
+    printf("  Solve time         : %.3g sec\n", state->cumulative_time_sec);
+    printf("  Primal obj         : %.10g\n", state->primal_objective_value);
+    printf("  Dual obj           : %.10g\n", state->dual_objective_value);
+    printf("  Primal infeas      : %.3e\n", state->relative_primal_residual);
+    printf("  Dual infeas        : %.3e\n", state->relative_dual_residual);
+
+    if (stats != NULL && stats->n_rows_original > 0) {
+        printf("\nPresolve Summary\n");
+        printf("  [Dimensions]\n");
+        printf("  Original           : %d rows, %d cols, %d nnz\n", 
+               stats->n_rows_original, stats->n_cols_original, stats->nnz_original);
+        printf("  Reduced            : %d rows, %d cols, %d nnz\n", 
+               stats->n_rows_reduced, stats->n_cols_reduced, stats->nnz_reduced);
+
+        printf("  [Reduction Details (NNZ Removed)]\n");
+        printf("  Trivial            : %d\n", stats->nnz_removed_trivial);
+        printf("  Fast               : %d\n", stats->nnz_removed_fast);
+        printf("  Primal Propagation : %d\n", stats->nnz_removed_primal_propagation);
+        printf("  Parallel Rows      : %d\n", stats->nnz_removed_parallel_rows);
+        printf("  Parallel Cols      : %d\n", stats->nnz_removed_parallel_cols);
+
+        printf("  [Timing]\n");
+        printf("  Total Presolve     : %.3g sec\n", stats->presolve_total_time);
+        printf("  Init               : %.3g sec\n", stats->ps_time_init);
+        printf("  Fast               : %.3g sec\n", stats->ps_time_fast);
+        printf("  Medium             : %.3g sec\n", stats->ps_time_medium);
+        printf("  Primal Propagation : %.3g sec\n", stats->ps_time_primal_propagation);
+        printf("  Parallel Rows      : %.3g sec\n", stats->ps_time_parallel_rows);
+        printf("  Parallel Cols      : %.3g sec\n", stats->ps_time_parallel_cols);
+        printf("  Postsolve          : %.3g sec\n", stats->ps_time_post_solve);
+    }
 }
 
 void display_iteration_stats(const pdhg_solver_state_t *state, bool verbose)

@@ -66,7 +66,7 @@ static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state);
 static void halpern_update(pdhg_solver_state_t *state,
                            double reflection_coefficient);
 static void rescale_solution(pdhg_solver_state_t *state);
-static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state);
+static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, PresolveStats *presolve_stats);
 static void perform_restart(pdhg_solver_state_t *state,
                             const pdhg_parameters_t *params);
 static void
@@ -177,7 +177,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         state->total_count++;
     }
 
-    pdhg_final_log(state, params->verbose, state->termination_reason);
+    // pdhg_final_log(state, params->verbose, state->termination_reason);
 
     if (params->feasibility_polishing && 
         state->termination_reason != TERMINATION_REASON_DUAL_INFEASIBLE && 
@@ -186,18 +186,31 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         feasibility_polish(params, state);
     }
 
-    cupdlpx_result_t *current_result = create_result_from_state(state);
-    
+    PresolveStats *stats_ptr = NULL;
+    if (presolve_info != NULL && presolve_info->presolver != NULL) {
+        stats_ptr = presolve_info->presolver->stats;
+    }
+    cupdlpx_result_t *current_result = create_result_from_state(state, stats_ptr);
+
     cupdlpx_result_t *final_result = NULL;
 
     if (params->use_presolve && presolve_info) {
         final_result = pslp_postsolve(presolve_info, current_result, original_problem);
-        
-        cupdlpx_result_free(current_result);
-        cupdlpx_presolve_info_free(presolve_info);
-    } 
+    }
     else {
         final_result = current_result;
+    }
+
+    PresolveStats *stats_to_log = NULL;
+    if (presolve_info != NULL && presolve_info->presolver != NULL) {
+        stats_to_log = presolve_info->presolver->stats;
+    }
+    // TODO: use results for pdhg_final_log instead of state.
+    pdhg_final_log(state, stats_to_log, params->verbose, state->termination_reason);
+
+    if (params->use_presolve && presolve_info) {
+        cupdlpx_result_free(current_result);
+        cupdlpx_presolve_info_free(presolve_info);
     }
 
     pdhg_solver_state_free(state);
@@ -962,7 +975,7 @@ void rescale_info_free(rescale_info_t *info)
     free(info);
 }
 
-static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state)
+static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, PresolveStats *presolve_stats)
 {
     cupdlpx_result_t *results =
         (cupdlpx_result_t *)safe_calloc(1, sizeof(cupdlpx_result_t));
@@ -1025,6 +1038,11 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state)
     results->termination_reason = state->termination_reason;
     results->feasibility_polishing_time = state->feasibility_polishing_time;
     results->feasibility_iteration = state->feasibility_iteration;
+    if (presolve_stats != NULL) {
+        results->presolve_stats = *presolve_stats;
+    } else {
+        memset(&(results->presolve_stats), 0, sizeof(PresolveStats));
+    }
 
     return results;
 }

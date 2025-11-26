@@ -16,6 +16,7 @@ limitations under the License.
 
 #pragma once
 
+#include "PSLP_stats.h"
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -120,6 +121,7 @@ extern "C"
 		termination_reason_t termination_reason;
 		double feasibility_polishing_time;
 		int feasibility_iteration;
+		PresolveStats presolve_stats;
 	} cupdlpx_result_t;
 
 	// matrix formats
