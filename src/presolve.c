@@ -79,7 +79,7 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
     if (params->verbose) {
         info->settings->verbose = true;
     }
-    // info->settings->relax_bounds = false;
+    info->settings->relax_bounds = false;
 
     // 3. Init Presolver
     info->presolver = new_presolver(
