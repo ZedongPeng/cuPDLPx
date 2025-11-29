@@ -1,6 +1,5 @@
 #include "presolve.h"
 #include "cupdlpx.h"
-#include "PSLP_inf.h"
 #include "PSLP_sol.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,27 +7,6 @@
 #include <float.h>
 #include <math.h>
 #include <time.h>
-
-void sanitize_infinity_for_pslp(double* arr, int n, double pslp_inf_val) {
-    for (int i = 0; i < n; ++i) {
-        if (isinf(arr[i]) || fabs(arr[i]) >= pslp_inf_val) {
-            arr[i] = (arr[i] > 0) ? pslp_inf_val : -pslp_inf_val;
-        }
-    }
-}
-
-#define CUPDLP_INF std::numeric_limits<double>::infinity()
-
-void restore_infinity_for_cupdlpx(double* arr, int n, double pslp_inf_val) {
-    for (int i = 0; i < n; ++i) {
-        if (arr[i] >= pslp_inf_val * 0.99) { 
-            arr[i] = INFINITY;
-        }
-        else if (arr[i] <= -pslp_inf_val * 0.99) {
-            arr[i] = -INFINITY;
-        }
-    }
-}
 
 lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
     matrix_desc_t desc;
@@ -43,11 +21,6 @@ lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
     desc.data.csr.row_ptr = reduced_prob->Ap;
     desc.data.csr.col_ind = reduced_prob->Ai;
     desc.data.csr.vals = reduced_prob->Ax;
-
-    restore_infinity_for_cupdlpx(reduced_prob->lhs, reduced_prob->m, PSLP_INF);
-    restore_infinity_for_cupdlpx(reduced_prob->rhs, reduced_prob->m, PSLP_INF);
-    restore_infinity_for_cupdlpx(reduced_prob->lbs, reduced_prob->n, PSLP_INF);
-    restore_infinity_for_cupdlpx(reduced_prob->ubs, reduced_prob->n, PSLP_INF);
 
     lp_problem_t* gpu_prob = create_lp_problem(
         reduced_prob->c,
@@ -68,20 +41,14 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
     cupdlpx_presolve_info_t *info = (cupdlpx_presolve_info_t*)calloc(1, sizeof(cupdlpx_presolve_info_t));
     if (!info) return NULL;
 
-    // 1. Sanitize input data
-    sanitize_infinity_for_pslp(original_prob->constraint_lower_bound, original_prob->num_constraints, PSLP_INF);
-    sanitize_infinity_for_pslp(original_prob->constraint_upper_bound, original_prob->num_constraints, PSLP_INF);
-    sanitize_infinity_for_pslp(original_prob->variable_lower_bound, original_prob->num_variables, PSLP_INF);
-    sanitize_infinity_for_pslp(original_prob->variable_upper_bound, original_prob->num_variables, PSLP_INF);
-
-    // 2. Init Settings
+    // 1. Init Settings
     info->settings = default_settings();
     if (params->verbose) {
         info->settings->verbose = true;
     }
     info->settings->relax_bounds = false;
 
-    // 3. Init Presolver
+    // 2. Init Presolver
     info->presolver = new_presolver(
         original_prob->constraint_matrix_values,
         original_prob->constraint_matrix_col_indices,
@@ -98,7 +65,7 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
         true 
     );
 
-    // 4. Run Presolve
+    // 3. Run Presolve
     PresolveStatus status = run_presolver(info->presolver);
     
     if (status & INFEASIBLE || status & UNBOUNDED) {
