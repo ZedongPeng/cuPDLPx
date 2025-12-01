@@ -191,6 +191,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         stats_ptr = presolve_info->presolver->stats;
     }
     cupdlpx_result_t *current_result = create_result_from_state(state, stats_ptr);
+    if (presolve_info != NULL) {
+        current_result->presolve_time = presolve_info->presolve_time;
+        current_result->presolve_setup_time = presolve_info->presolve_setup_time;
+    }
 
     cupdlpx_result_t *final_result = NULL;
 
@@ -207,6 +211,9 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     }
     // TODO: use results for pdhg_final_log instead of state.
     pdhg_final_log(state, stats_to_log, params->verbose, state->termination_reason);
+    printf("Presolve time (sec): %.3g\n", current_result->presolve_time);
+    printf("Presolve setup time (sec): %.3g\n", current_result->presolve_setup_time);
+    // printf("  Solve time         : %.3g sec\n", state->cumulative_time_sec);
 
     if (params->use_presolve && presolve_info) {
         cupdlpx_result_free(current_result);

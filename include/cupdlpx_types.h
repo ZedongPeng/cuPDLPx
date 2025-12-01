@@ -105,6 +105,8 @@ extern "C"
 		int total_count;
 		double rescaling_time_sec;
 		double cumulative_time_sec;
+		double presolve_time;
+		double presolve_setup_time;
 
 		double absolute_primal_residual;
 		double relative_primal_residual;

@@ -1,6 +1,7 @@
 #include "presolve.h"
 #include "cupdlpx.h"
 #include "PSLP_sol.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,30 +10,29 @@
 #include <time.h>
 
 lp_problem_t* convert_pslp_to_cupdlpx(PresolvedProblem *reduced_prob) {
-    matrix_desc_t desc;
-    memset(&desc, 0, sizeof(matrix_desc_t)); 
 
-    desc.m = reduced_prob->m;
-    desc.n = reduced_prob->n;
-    desc.fmt = matrix_csr;
-    desc.zero_tolerance = 0.0; 
+    lp_problem_t *cupdlpx_prob = (lp_problem_t *)safe_malloc(sizeof(lp_problem_t));
+    // TODO: handle warmstart here
+    cupdlpx_prob->primal_start = NULL;
+    cupdlpx_prob->dual_start = NULL;
 
-    desc.data.csr.nnz = reduced_prob->nnz;
-    desc.data.csr.row_ptr = reduced_prob->Ap;
-    desc.data.csr.col_ind = reduced_prob->Ai;
-    desc.data.csr.vals = reduced_prob->Ax;
+    cupdlpx_prob->objective_constant = reduced_prob->obj_offset;
+    cupdlpx_prob->objective_vector = reduced_prob->c;
 
-    lp_problem_t* gpu_prob = create_lp_problem(
-        reduced_prob->c,
-        &desc,
-        reduced_prob->lhs, // constraint lower bound
-        reduced_prob->rhs, // constraint upper bound
-        reduced_prob->lbs, // variable lower bound
-        reduced_prob->ubs, // variable upper bound
-        &reduced_prob->obj_offset
-    );
+    cupdlpx_prob->constraint_lower_bound = reduced_prob->lhs;
+    cupdlpx_prob->constraint_upper_bound = reduced_prob->rhs;
+    cupdlpx_prob->variable_lower_bound = reduced_prob->lbs;
+    cupdlpx_prob->variable_upper_bound = reduced_prob->ubs;
 
-    return gpu_prob;
+    cupdlpx_prob->constraint_matrix_num_nonzeros = reduced_prob->nnz;
+    cupdlpx_prob->constraint_matrix_row_pointers = reduced_prob->Ap;
+    cupdlpx_prob->constraint_matrix_col_indices = reduced_prob->Ai;
+    cupdlpx_prob->constraint_matrix_values = reduced_prob->Ax;
+
+    cupdlpx_prob->num_variables = reduced_prob->n;
+    cupdlpx_prob->num_constraints = reduced_prob->m;
+
+    return cupdlpx_prob;
 }
 
 cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const pdhg_parameters_t *params) {
@@ -64,6 +64,7 @@ cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const 
         info->settings,
         true 
     );
+    info->presolve_setup_time = (double)(clock() - start_time) / CLOCKS_PER_SEC;
 
     // 3. Run Presolve
     PresolveStatus status = run_presolver(info->presolver);
@@ -130,7 +131,7 @@ cupdlpx_result_t* pslp_postsolve(cupdlpx_presolve_info_t *info,
 
 void cupdlpx_presolve_info_free(cupdlpx_presolve_info_t *info) {
     if (!info) return;
-    if (info->reduced_problem) lp_problem_free(info->reduced_problem);
+    // if (info->reduced_problem) lp_problem_free(info->reduced_problem);
     if (info->presolver) free_presolver(info->presolver);
     if (info->settings) free_settings(info->settings);
     free(info);

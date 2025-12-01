@@ -15,6 +15,7 @@ typedef struct {
     lp_problem_t *reduced_problem; 
     bool problem_solved_during_presolve; 
     double presolve_time;
+    double presolve_setup_time;
 } cupdlpx_presolve_info_t;
 
 cupdlpx_presolve_info_t* pslp_presolve(const lp_problem_t *original_prob, const pdhg_parameters_t *params);
