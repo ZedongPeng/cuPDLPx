@@ -99,6 +99,16 @@ cupdlpx_result_t* pslp_postsolve(cupdlpx_presolve_info_t *info,
 
         res->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE;
         res->cumulative_time_sec = info->presolve_time;
+        res->num_variables = original_prob->num_variables;
+        res->num_constraints = original_prob->num_constraints;
+
+        if (res->num_variables > 0) {
+            res->primal_solution = (double*)calloc(res->num_variables, sizeof(double));
+            res->reduced_cost = (double*)calloc(res->num_variables, sizeof(double)); 
+        }
+        if (res->num_constraints > 0) {
+            res->dual_solution = (double*)calloc(res->num_constraints, sizeof(double));
+        }
         return res;
     }
 

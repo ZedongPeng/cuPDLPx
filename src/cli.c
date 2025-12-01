@@ -140,9 +140,11 @@ void save_solver_summary(const cupdlpx_result_t *result, const char *output_dir,
         fprintf(outfile, "Feasibility Polishing Time (sec): %e\n", result->feasibility_polishing_time);
         fprintf(outfile, "Feasibility Polishing Iteration Count: %d\n", result->feasibility_iteration);
     }
-    if (result->presolve_stats.n_cols_original > 0) {
+    if (result->presolve_time > 0.0) {
         fprintf(outfile, "Presolve Time (sec): %e\n", result->presolve_time);
         fprintf(outfile, "Presolve Setup Time (sec): %e\n", result->presolve_setup_time);
+    }
+    if (result->presolve_stats.n_cols_original > 0) {
         fprintf(outfile, "Original Rows: %d\n", result->presolve_stats.n_rows_original);
         fprintf(outfile, "Original Cols: %d\n", result->presolve_stats.n_cols_original);
         fprintf(outfile, "Original NNZ: %d\n", result->presolve_stats.nnz_original);

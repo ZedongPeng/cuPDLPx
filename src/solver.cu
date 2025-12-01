@@ -114,6 +114,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
         if (presolve_info->problem_solved_during_presolve) {
              cupdlpx_result_t *early_result = pslp_postsolve(presolve_info, NULL, original_problem);
+             if (presolve_info != NULL) {
+                early_result->presolve_time = presolve_info->presolve_time;
+                early_result->presolve_setup_time = presolve_info->presolve_setup_time;
+            }
              cupdlpx_presolve_info_free(presolve_info);
              return early_result;
         }
