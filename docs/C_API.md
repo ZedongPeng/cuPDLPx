@@ -25,22 +25,18 @@ cupdlpx_result_t* solve_lp_problem(
 ```
 
 `create_lp_problem` parameters:
-- `objective_c`: Objective vector. If NULL, defaults to all zeros.
+- `objective_c`: Objective vector. If `NULL`, defaults to all zeros.
 - `A_desc`: Matrix descriptor. Supports `matrix_dense`, `matrix_csr`, `matrix_csc`, `matrix_coo`.
-- `con_lb`: Constraint lower bounds. If NULL, defaults to all -INFINITY.
-- `con_ub`: Constraint upper bounds. If NULL, defaults to all +INFINITY.
-- `var_lb`: Variable lower bounds. If NULL, defaults to all 0.0.
-- `var_ub`: Variable upper bounds. If NULL, defaults to all +INFINITY.
-- `objective_constant`: Scalar constant term added to the objective value. If NULL, defaults to 0.0.
+- `con_lb`: Constraint lower bounds. If `NULL`, defaults to all `-INFINITY`.
+- `con_ub`: Constraint upper bounds. If `NULL`, defaults to all `+INFINITY`.
+- `var_lb`: Variable lower bounds. If `NULL`, defaults to all `-INFINITY`.
+- `var_ub`: Variable upper bounds. If `NULL`, defaults to all `+INFINITY`.
+- `objective_constant`: Scalar constant term added to the objective value. If `NULL`, defaults to `0.0`.
 
 
 `solve_lp_problem` parameters:
 - `prob`: An LP problem built with `create_LP_problem`.
 - `params`: Solver parameters. If `NULL`, the solver will use default parameters.
-
-#### Feasibility Polishing (optional post-solve refinement)
-
-After the normal PDHG solve you can ask cuPDLPx to run an extra feasibility-polishing phase that tries to improve primal/dual feasibility.
 
 #### Example: Solving a Small LP
 ```c
