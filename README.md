@@ -101,7 +101,7 @@ The solver generates three text files in the specified <output_directory>. The f
 
 ### Python Interface
 The `cupdlpx` Python package supports building and solving LPs directly with `NumPy` and `SciPy`.
-Documentation and examples are available in the [Python API Guide](python/README.md)
+Documentation and examples are available in the [Python API Guide](python/README.md).
 
 ### C Interface
 The public C API is defined in header file [`include/cupdlpx.h`](include/cupdlpx.h). A detailed description with usage examples can be found in the [C API Guide](docs/C_API.md).
