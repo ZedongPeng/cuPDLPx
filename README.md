@@ -51,13 +51,12 @@ wget -P test/ https://miplib.zib.de/WebData/instances/2club200v15p5scn.mps.gz
 ```
 If the solver runs and creates output files, your installation is successful.
 
-### Install Python package
-You can install the Python package `cupdlpx` directly from PyPI:
+### Python Package Installation
+To use cuPDLPx in Python, you can install the pre-built package `cupdlpx` directly from PyPI:
 ```bash
 pip install cupdlpx
 ```
 Or build from source:
-
 ```
 git clone https://github.com/MIT-Lu-Lab/cuPDLPx.git
 cd cuPDLPx
@@ -73,11 +72,11 @@ After building the project, the `./build/cupdlpx` binary can be invoked from the
 ./build/cupdlpx [OPTIONS] <mps_file> <output_directory>
 ```
 
-### Arguments
+#### Arguments
 - `<mps_file>`: The path to the input linear programming problem. Both plain (`.mps`) and gzipped (`.mps.gz`) files are supported.
 - `<output_directory>`: The directory where the output files will be saved.
 
-### Solver Options
+#### Solver Options
 
 | Option | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
@@ -91,7 +90,7 @@ After building the project, the `./build/cupdlpx` binary can be invoked from the
 | `-f`,`--feasibility_polishing` |`flag`   | Run the polishing loop           | `false` |
 | `--eps_feas_polish` | `double` | Relative tolerance for polishing | `1e-6`  |
 
-### Output Files
+#### Output Files
 The solver generates three text files in the specified <output_directory>. The filenames are derived from the input file's basename. For an input `INSTANCE.mps.gz`, the output will be:
 ```
 <output_directory>/
