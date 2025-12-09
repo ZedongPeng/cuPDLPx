@@ -91,7 +91,7 @@ After building the project, the `./build/cupdlpx` binary can be invoked from the
 | `--no_pock_chambolle` | `flag` | Disable Pock-Chambolle rescaling | `enabled` |
 | `--pock_chambolle_alpha` | `float` | Value for Pock-Chambolle alpha | `1.0` |
 | `--no_bound_obj_rescaling` | `flag` | Disable bound objective rescaling | `enabled` |
-| `eval_freq` | `int` | Termination evaluation frequency | `200` |
+| `--eval_freq` | `int` | Termination evaluation frequency | `200` |
 | `--sv_max_iter` | `int` | Max iterations for singular value estimation | `5000` |
 | `--sv_tol` | `float` | Tolerance for singular value estimation | `1e-4` |
 | `-f`,`--feasibility_polishing` |`flag` | Run the polishing loop | `false` |
