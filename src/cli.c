@@ -16,9 +16,9 @@ limitations under the License.
 
 #include "cupdlpx.h"
 #include "mps_parser.h"
+#include "presolve.h"
 #include "solver.h"
 #include "utils.h"
-#include "presolve.h"
 #include <getopt.h>
 #include <libgen.h>
 #include <stdbool.h>
@@ -37,11 +37,14 @@ const char *termination_reason_tToString(termination_reason_t reason)
         return "PRIMAL_INFEASIBLE";
     case TERMINATION_REASON_DUAL_INFEASIBLE:
         return "DUAL_INFEASIBLE";
+    case TERMINATION_REASON_INFEASIBLE_OR_UNBOUNDED:
+        return "INFEASIBLE_OR_UNBOUNDED";
     case TERMINATION_REASON_TIME_LIMIT:
         return "TIME_LIMIT";
     case TERMINATION_REASON_ITERATION_LIMIT:
         return "ITERATION_LIMIT";
     case TERMINATION_REASON_UNSPECIFIED:
+        return "UNSPECIFIED";
     case TERMINATION_REASON_FEAS_POLISH_SUCCESS:
         return "FEAS_POLISH_SUCCESS";
     default:
@@ -84,7 +87,7 @@ void save_solution(const double *data, int size, const char *output_dir,
                    const char *instance_name, const char *suffix)
 {
     char *file_path = get_output_path(output_dir, instance_name, suffix);
-    if (file_path == NULL)
+    if (file_path == NULL || data == NULL)
     {
         return;
     }
@@ -136,36 +139,21 @@ void save_solver_summary(const cupdlpx_result_t *result, const char *output_dir,
     fprintf(outfile, "Absolute Objective Gap: %e\n", result->objective_gap);
     fprintf(outfile, "Relative Objective Gap: %e\n",
             result->relative_objective_gap);
-    if(result->feasibility_polishing_time > 0.0){
+    fprintf(outfile, "Rows: %d\n", result->num_constraints);
+    fprintf(outfile, "Columns: %d\n", result->num_variables);
+    fprintf(outfile, "Nonzeros: %d\n", result->num_nonzeros);
+    if (result->presolve_time > 0.0)
+    {
+        fprintf(outfile, "Presolve Status: %s\n", get_presolve_status_str(result->presolve_status));
+        fprintf(outfile, "Presolve Time (sec): %e\n", result->presolve_time);
+        fprintf(outfile, "Reduced Rows: %d\n", result->num_reduced_constraints);
+        fprintf(outfile, "Reduced Columns: %d\n", result->num_reduced_variables);
+        fprintf(outfile, "Reduced Nonzeros: %d\n", result->num_reduced_nonzeros);
+    }
+    if (result->feasibility_polishing_time > 0.0)
+    {
         fprintf(outfile, "Feasibility Polishing Time (sec): %e\n", result->feasibility_polishing_time);
         fprintf(outfile, "Feasibility Polishing Iteration Count: %d\n", result->feasibility_iteration);
-    }
-    if (result->presolve_time > 0.0) {
-        fprintf(outfile, "Presolve Time (sec): %e\n", result->presolve_time);
-        fprintf(outfile, "Presolve Setup Time (sec): %e\n", result->presolve_setup_time);
-    }
-    if (result->presolve_stats.n_cols_original > 0) {
-        fprintf(outfile, "Original Rows: %d\n", result->presolve_stats.n_rows_original);
-        fprintf(outfile, "Original Cols: %d\n", result->presolve_stats.n_cols_original);
-        fprintf(outfile, "Original NNZ: %d\n", result->presolve_stats.nnz_original);
-        fprintf(outfile, "Reduced Rows: %d\n", result->presolve_stats.n_rows_reduced);
-        fprintf(outfile, "Reduced Cols: %d\n", result->presolve_stats.n_cols_reduced);
-        fprintf(outfile, "Reduced NNZ: %d\n", result->presolve_stats.nnz_reduced);
-
-        fprintf(outfile, "NNZ Removed Trivial: %d\n", result->presolve_stats.nnz_removed_trivial);
-        fprintf(outfile, "NNZ Removed Fast: %d\n", result->presolve_stats.nnz_removed_fast);
-        fprintf(outfile, "NNZ Removed Primal Propagation: %d\n", result->presolve_stats.nnz_removed_primal_propagation);
-        fprintf(outfile, "NNZ Removed Parallel Rows: %d\n", result->presolve_stats.nnz_removed_parallel_rows);
-        fprintf(outfile, "NNZ Removed Parallel Cols: %d\n", result->presolve_stats.nnz_removed_parallel_cols);
-
-        fprintf(outfile, "Presolve Total Time (sec): %e\n", result->presolve_stats.presolve_total_time);
-        fprintf(outfile, "Presolve Time Init (sec): %e\n", result->presolve_stats.ps_time_init);
-        fprintf(outfile, "Presolve Time Fast (sec): %e\n", result->presolve_stats.ps_time_fast);
-        fprintf(outfile, "Presolve Time Medium (sec): %e\n", result->presolve_stats.ps_time_medium);
-        fprintf(outfile, "Presolve Time Primal Proppagation (sec): %e\n", result->presolve_stats.ps_time_primal_propagation);
-        fprintf(outfile, "Presolve Time Parallel Rows (sec): %e\n", result->presolve_stats.ps_time_parallel_rows);
-        fprintf(outfile, "Presolve Time Parallel Cols (sec): %e\n", result->presolve_stats.ps_time_parallel_cols);
-        fprintf(outfile, "Postsolve Time (sec): %e\n", result->presolve_stats.ps_time_post_solve);
     }
     fclose(outfile);
     free(file_path);
@@ -205,7 +193,7 @@ void print_usage(const char *prog_name)
                     "detection tolerance (default: 1e-10).\n");
     fprintf(stderr, "      --eps_feas_polish <tolerance>   Relative feasibility "
                     "polish tolerance (default: 1e-6).\n");
-    fprintf(stderr, "  -f  --feasibility_polishing         Enable feasibility " 
+    fprintf(stderr, "  -f  --feasibility_polishing         Enable feasibility "
                     "use feasibility polishing (default: false).\n");
     fprintf(stderr, "  -p, --presolve "
                     "enable presolving (default: false).\n");
@@ -258,10 +246,10 @@ int main(int argc, char *argv[])
         case 1006: // --eps_feas_polish_relative
             params.termination_criteria.eps_feas_polish_relative = atof(optarg);
             break;
-        case 'f':                  // --feasibility_polishing
+        case 'f': // --feasibility_polishing
             params.feasibility_polishing = true;
             break;
-        case 'p':                  // --presolve
+        case 'p': // --presolve
             params.use_presolve = true;
             break;
         case '?': // Unknown option

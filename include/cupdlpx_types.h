@@ -31,6 +31,7 @@ extern "C"
 		TERMINATION_REASON_OPTIMAL,
 		TERMINATION_REASON_PRIMAL_INFEASIBLE,
 		TERMINATION_REASON_DUAL_INFEASIBLE,
+		TERMINATION_REASON_INFEASIBLE_OR_UNBOUNDED,
 		TERMINATION_REASON_TIME_LIMIT,
 		TERMINATION_REASON_ITERATION_LIMIT,
 		TERMINATION_REASON_FEAS_POLISH_SUCCESS
@@ -97,6 +98,11 @@ extern "C"
 	{
 		int num_variables;
 		int num_constraints;
+		int num_nonzeros;
+
+		int num_reduced_variables;
+		int num_reduced_constraints;
+		int num_reduced_nonzeros;
 
 		double *primal_solution;
 		double *dual_solution;
@@ -106,7 +112,7 @@ extern "C"
 		double rescaling_time_sec;
 		double cumulative_time_sec;
 		double presolve_time;
-		double presolve_setup_time;
+		int presolve_status;
 
 		double absolute_primal_residual;
 		double relative_primal_residual;
@@ -123,7 +129,6 @@ extern "C"
 		termination_reason_t termination_reason;
 		double feasibility_polishing_time;
 		int feasibility_iteration;
-		PresolveStats presolve_stats;
 	} cupdlpx_result_t;
 
 	// matrix formats
