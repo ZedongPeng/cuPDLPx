@@ -761,14 +761,14 @@ initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
     if (state->constraint_matrix->num_nonzeros == 0)
     {
         state->step_size = 1.0;
-        state->primal_weight = 1.0;
-        state->best_primal_weight = 1.0;
-        return;
     }
-    double max_sv = estimate_maximum_singular_value(
-        state->sparse_handle, state->blas_handle, state->constraint_matrix,
-        state->constraint_matrix_t, params->sv_max_iter, params->sv_tol);
-    state->step_size = 0.998 / max_sv;
+    else
+    {
+        double max_sv = estimate_maximum_singular_value(
+            state->sparse_handle, state->blas_handle, state->constraint_matrix,
+            state->constraint_matrix_t, params->sv_max_iter, params->sv_tol);
+        state->step_size = 0.998 / max_sv;
+    }
 
     if (params->bound_objective_rescaling)
     {
