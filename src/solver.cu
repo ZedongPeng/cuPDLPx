@@ -758,6 +758,13 @@ static void
 initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
                                        const pdhg_parameters_t *params)
 {
+    if (state->num_constraints == 0)
+    {
+        state->step_size = 1.0;
+        state->primal_weight = 1.0;
+        state->best_primal_weight = 1.0;
+        return;
+    }
     double max_sv = estimate_maximum_singular_value(
         state->sparse_handle, state->blas_handle, state->constraint_matrix,
         state->constraint_matrix_t, params->sv_max_iter, params->sv_tol);
