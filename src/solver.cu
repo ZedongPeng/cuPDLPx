@@ -758,7 +758,7 @@ static void
 initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
                                        const pdhg_parameters_t *params)
 {
-    if (state->num_constraints == 0)
+    if (state->constraint_matrix->num_nonzeros == 0)
     {
         state->step_size = 1.0;
         state->primal_weight = 1.0;
