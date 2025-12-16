@@ -120,7 +120,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     initialize_step_size_and_primal_weight(state, params);
     clock_t start_time = clock();
     bool do_restart = false;
-    while (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
+    while (state->total_count < params->termination_criteria.iteration_limit)
     {
         if ((state->is_this_major_iteration || state->total_count == 0) ||
             (state->total_count % get_print_frequency(state->total_count) == 0))
@@ -137,6 +137,9 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
             check_termination_criteria(state, &params->termination_criteria);
             display_iteration_stats(state, params->verbose);
+            if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED) {
+                break;
+            }
         }
 
         if ((state->is_this_major_iteration || state->total_count == 0))
@@ -168,6 +171,13 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
         state->inner_count++;
         state->total_count++;
+    }
+
+    if (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
+    {
+        state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
+        compute_residual(state);
+        display_iteration_stats(state, params->verbose);
     }
 
     if (params->feasibility_polishing &&
