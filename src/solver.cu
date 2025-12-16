@@ -101,7 +101,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     cupdlpx_presolve_info_t *presolve_info = NULL;
     const lp_problem_t *working_problem = original_problem;
 
-    if (params->use_presolve)
+    if (params->presolve)
     {
         presolve_info = pslp_presolve(original_problem, params);
         if (presolve_info->problem_solved_during_presolve)
@@ -179,7 +179,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
     cupdlpx_result_t *result = create_result_from_state(state, original_problem);
 
-    if (params->use_presolve && presolve_info)
+    if (params->presolve && presolve_info)
     {
         pslp_postsolve(presolve_info, result, original_problem);
         cupdlpx_presolve_info_free(presolve_info);

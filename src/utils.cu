@@ -349,7 +349,7 @@ void set_default_parameters(pdhg_parameters_t *params)
     params->restart_params.k_d = 0.0;
     params->restart_params.i_smooth = 0.3;
 
-    params->use_presolve = true;
+    params->presolve = true;
 }
 
 #define PRINT_DIFF_INT(name, current, default_val) \
@@ -462,7 +462,7 @@ void pdhg_final_log(
     }
     printf("Solution Summary\n");
     printf("  Status             : %s\n", termination_reason_to_string(result->termination_reason));
-    if (params->use_presolve)
+    if (params->presolve)
     {
         printf("  Presolve time      : %.3g sec\n", result->presolve_time);
     }

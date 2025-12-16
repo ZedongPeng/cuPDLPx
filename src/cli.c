@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
             params.termination_evaluation_frequency = atoi(optarg);
             break;
         case 1014: // --no_presolve
-            params.use_presolve = false;
+            params.presolve = false;
             break;
         case '?': // Unknown option
             return 1;

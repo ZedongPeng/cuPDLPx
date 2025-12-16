@@ -93,7 +93,7 @@ extern "C"
 		restart_parameters_t restart_params;
 		double reflection_coefficient;
 		bool feasibility_polishing;
-		bool use_presolve;
+		bool presolve;
 	} pdhg_parameters_t;
 
 	typedef struct
