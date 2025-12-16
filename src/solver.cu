@@ -72,7 +72,8 @@ static void perform_restart(pdhg_solver_state_t *state,
 static void
 initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
                                        const pdhg_parameters_t *params);
-static pdhg_solver_state_t *initialize_solver_state(const lp_problem_t *original_problem,
+static pdhg_solver_state_t *initialize_solver_state(const pdhg_parameters_t *params,
+                                                    const lp_problem_t *original_problem,
                                                     const rescale_info_t *rescale_info);
 static void compute_fixed_point_error(pdhg_solver_state_t *state);
 void pdhg_solver_state_free(pdhg_solver_state_t *state);
@@ -113,7 +114,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         working_problem = presolve_info->reduced_problem;
     }
     rescale_info_t *rescale_info = rescale_problem(params, working_problem);
-    pdhg_solver_state_t *state = initialize_solver_state(working_problem, rescale_info);
+    pdhg_solver_state_t *state = initialize_solver_state(params, working_problem, rescale_info);
 
     rescale_info_free(rescale_info);
     initialize_step_size_and_primal_weight(state, params);
@@ -206,7 +207,8 @@ __global__ void compute_and_rescale_reduced_cost_kernel(
 }
 
 static pdhg_solver_state_t *
-initialize_solver_state(const lp_problem_t *working_problem,
+initialize_solver_state(const pdhg_parameters_t *params,
+                        const lp_problem_t *working_problem,
                         const rescale_info_t *rescale_info)
 {
     pdhg_solver_state_t *state =
@@ -502,16 +504,17 @@ initialize_solver_state(const lp_problem_t *working_problem,
                           state->num_constraints * sizeof(double),
                           cudaMemcpyHostToDevice));
     free(ones_dual_h);
-
-    printf("---------------------------------------------------------------------"
-           "------------------\n");
-    printf("%s | %s | %s | %s \n", "   runtime    ", "    objective     ",
-           "  absolute residuals   ", "  relative residuals   ");
-    printf("%s %s | %s %s | %s %s %s | %s %s %s \n", "  iter", "  time ",
-           " pr obj ", "  du obj ", " pr res", " du res", "  gap  ", " pr res",
-           " du res", "  gap  ");
-    printf("---------------------------------------------------------------------"
-           "------------------\n");
+    if (params->verbose) {
+        printf("---------------------------------------------------------------------"
+            "------------------\n");
+        printf("%s | %s | %s | %s \n", "   runtime    ", "    objective     ",
+            "  absolute residuals   ", "  relative residuals   ");
+        printf("%s %s | %s %s | %s %s %s | %s %s %s \n", "  iter", "  time ",
+            " pr obj ", "  du obj ", " pr res", " du res", "  gap  ", " pr res",
+            " du res", "  gap  ");
+        printf("---------------------------------------------------------------------"
+            "------------------\n");
+    }
 
     return state;
 }
