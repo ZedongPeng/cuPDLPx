@@ -6,6 +6,13 @@ cmake_minimum_required(VERSION 3.20)
 # Project config
 project(cupdlpx LANGUAGES C CXX CUDA)
 
+set(CUPDLPX_VERSION_MAJOR 0)
+set(CUPDLPX_VERSION_MINOR 1)
+set(CUPDLPX_VERSION_PATCH 5)
+
+set(CUPDLPX_VERSION "${CUPDLPX_VERSION_MAJOR}.${CUPDLPX_VERSION_MINOR}.${CUPDLPX_VERSION_PATCH}")
+add_compile_definitions(CUPDLPX_VERSION="${CUPDLPX_VERSION}")
+
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 
 # C/C++ standards
@@ -19,8 +26,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# Increase compatibility by compiling for all supported real and virtual architectures.
-set(CMAKE_CUDA_ARCHITECTURES all)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.23")
+    set(CMAKE_CUDA_ARCHITECTURES all)
+else()
+    set(CMAKE_CUDA_ARCHITECTURES 60 61 70 75 80 86 89 90 90-virtual)
+endif()
 
 # Global Compile flags (corresponding to CFLAGS/NVCCFLAGS)
 add_compile_options(-fPIC -O3 -Wall -Wextra -g)
@@ -66,52 +76,6 @@ if (CUPDLPX_BUILD_PYTHON)
 endif()
 
 # -----------------------------------------------------------------------------
-# VERSION HEADER GENERATION (Build/generated/version.h)
-# -----------------------------------------------------------------------------
-if (CUPDLPX_BUILD_PYTHON)
-    # Extract version from pyproject.toml (Requires Python3_EXECUTABLE)
-    execute_process(
-      COMMAND ${Python3_EXECUTABLE} -c
-[=[
-import sys
-try:
-    import tomllib as toml
-except ModuleNotFoundError:
-    import tomli as toml
-import os
-
-if not os.path.exists("pyproject.toml"):
-    sys.stderr.write("Error: pyproject.toml not found in the root directory.\n")
-    sys.exit(1)
-
-with open("pyproject.toml", "rb") as f:
-    data = toml.load(f)
-ver = data["project"]["version"]
-print(ver)
-]=]
-      WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-      OUTPUT_VARIABLE CUPDLPX_VERSION
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    message(STATUS "cuPDLPx version from pyproject.toml = ${CUPDLPX_VERSION}")
-else()
-    # Set a fallback version when Python is not used (suitable for Yggdrasil builds)
-    set(CUPDLPX_VERSION "0.0.0-core-only")
-    message(STATUS "cuPDLPx version (core only) = ${CUPDLPX_VERSION}")
-endif()
-
-# Generate version.h from version.h.in
-configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/version.h.in 
-  ${CMAKE_CURRENT_BINARY_DIR}/generated/version.h
-  @ONLY
-)
-
-# Make the generated files available for inclusion
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
-
-
-# -----------------------------------------------------------------------------
 # SOURCE DISCOVERY & TARGET DEFINITION
 # -----------------------------------------------------------------------------
 # Using file(GLOB) for convenience, but explicit lists are recommended for robust builds
@@ -128,7 +92,6 @@ list(REMOVE_ITEM C_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/cli.c")
 set(CORE_INCLUDE_DIRS
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include     # Public API headers
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/internal    # Internal implementation headers
-  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated   # Generated headers (version.h)
 )
 
 # Set common link libraries
@@ -190,7 +153,6 @@ if(CUPDLPX_BUILD_CLI)
     target_include_directories(cupdlpx_cli PRIVATE 
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/internal
-        ${CMAKE_CURRENT_BINARY_DIR}/generated
     )
 
     # Link CLI to the static core library
@@ -230,7 +192,6 @@ if(CUPDLPX_BUILD_TESTS)
         target_include_directories(${TEST_NAME} 
           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/internal
-          PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated
         )
         
         # Tests are final executables, they must resolve device symbols

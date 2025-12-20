@@ -174,9 +174,12 @@ static const char *status_to_str(termination_reason_t r)
         return "TIME_LIMIT";
     case TERMINATION_REASON_ITERATION_LIMIT:
         return "ITERATION_LIMIT";
+    case TERMINATION_REASON_FEAS_POLISH_SUCCESS:
+        return "FEAS_POLISH_SUCCESS";
     case TERMINATION_REASON_UNSPECIFIED:
-    default:
         return "UNSPECIFIED";
+    default:
+        return "UNKNOWN";
     }
 }
 
@@ -236,6 +239,14 @@ static py::dict get_default_params_py()
     // reflection
     d["reflection_coefficient"] = p.reflection_coefficient;
 
+    // feasiblity polishing
+    d["feasibility_polishing"] = p.feasibility_polishing;
+    d["eps_feas_polish_relative"] = p.termination_criteria.eps_feas_polish_relative;
+
+    // power method for singular value estimation
+    d["sv_max_iter"] = p.sv_max_iter;
+    d["sv_tol"] = p.sv_tol;
+
     return d;
 }
 
@@ -280,6 +291,14 @@ static void parse_params_from_python(py::object params_obj, pdhg_parameters_t *p
 
     // reflection
     getf("reflection_coefficient", p->reflection_coefficient);
+
+    // Feasibility Polishing
+    getb("feasibility_polishing", p->feasibility_polishing);
+    getf("eps_feas_polish_relative", p->termination_criteria.eps_feas_polish_relative);
+
+    // power method for singular value estimation
+    geti("sv_max_iter", p->sv_max_iter);
+    getf("sv_tol", p->sv_tol);
 }
 
 // view of matrix from Python

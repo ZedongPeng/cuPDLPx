@@ -15,9 +15,12 @@ limitations under the License.
 */
 
 #include "utils.h"
-#include "version.h"
 #include <math.h>
 #include <random>
+
+#ifndef CUPDLPX_VERSION
+#define CUPDLPX_VERSION "unknown"
+#endif
 
 std::mt19937 gen(1);
 std::normal_distribution<double> dist(0.0, 1.0);
@@ -207,10 +210,11 @@ const char *termination_reason_to_string(termination_reason_t reason)
     case TERMINATION_REASON_ITERATION_LIMIT:
         return "ITERATION_LIMIT";
     case TERMINATION_REASON_UNSPECIFIED:
+        return "UNSPECIFIED";
     case TERMINATION_REASON_FEAS_POLISH_SUCCESS:
         return "FEAS_POLISH_SUCCESS";
     default:
-        return "UNSPECIFIED";
+        return "UNKNOWN";
     }
 }
 
@@ -314,9 +318,62 @@ bool should_do_adaptive_restart(pdhg_solver_state_t *solver_state,
     return do_restart;
 }
 
+void set_default_parameters(pdhg_parameters_t *params)
+{
+    params->l_inf_ruiz_iterations = 10;
+    params->has_pock_chambolle_alpha = true;
+    params->pock_chambolle_alpha = 1.0;
+    params->bound_objective_rescaling = true;
+    params->verbose = false;
+    params->termination_evaluation_frequency = 200;
+    params->feasibility_polishing = false;
+    params->reflection_coefficient = 1.0;
+
+    params->sv_max_iter = 5000;
+    params->sv_tol = 1e-4;
+
+    params->termination_criteria.eps_optimal_relative = 1e-4;
+    params->termination_criteria.eps_feasible_relative = 1e-4;
+    params->termination_criteria.eps_infeasible = 1e-10;
+    params->termination_criteria.time_sec_limit = 3600.0;
+    params->termination_criteria.iteration_limit = INT32_MAX;
+    params->termination_criteria.eps_feas_polish_relative = 1e-6;
+
+    params->restart_params.artificial_restart_threshold = 0.36;
+    params->restart_params.sufficient_reduction_for_restart = 0.2;
+    params->restart_params.necessary_reduction_for_restart = 0.5;
+    params->restart_params.k_p = 0.99;
+    params->restart_params.k_i = 0.01;
+    params->restart_params.k_d = 0.0;
+    params->restart_params.i_smooth = 0.3;
+}
+
+#define PRINT_DIFF_INT(name, current, default_val) \
+    do { \
+        if ((current) != (default_val)) { \
+            printf("  %-18s : %d\n", name, current); \
+        } \
+    } while(0)
+
+#define PRINT_DIFF_DBL(name, current, default_val) \
+    do { \
+        if (fabs((current) - (default_val)) > 1e-9) { \
+            printf("  %-18s : %.1e\n", name, (double)(current)); \
+        } \
+    } while(0)
+
+#define PRINT_DIFF_BOOL(name, current, default_val) \
+    do { \
+        if ((current) != (default_val)) { \
+            printf("  %-18s : %s\n", name, (current) ? "on" : "off"); \
+        } \
+    } while(0)
+
 void print_initial_info(const pdhg_parameters_t *params,
                         const lp_problem_t *problem)
 {
+    pdhg_parameters_t default_params;
+    set_default_parameters(&default_params);
     if (!params->verbose)
     {
         return;
@@ -336,7 +393,7 @@ void print_initial_info(const pdhg_parameters_t *params,
     printf("problem:\n");
     printf("  variables     : %d\n", problem->num_variables);
     printf("  constraints   : %d\n", problem->num_constraints);
-    printf("  nnz(A)        : %d\n", problem->constraint_matrix_num_nonzeros);
+    printf("  nonzeros(A)   : %d\n", problem->constraint_matrix_num_nonzeros);
 
     printf("settings:\n");
     printf("  iter_limit         : %d\n",
@@ -349,6 +406,33 @@ void print_initial_info(const pdhg_parameters_t *params,
            params->termination_criteria.eps_feasible_relative);
     printf("  eps_infeas_detect  : %.1e\n",
            params->termination_criteria.eps_infeasible);
+    PRINT_DIFF_INT("l_inf_ruiz_iter",
+                   params->l_inf_ruiz_iterations, 
+                   default_params.l_inf_ruiz_iterations);
+    PRINT_DIFF_DBL("pock_chambolle_alpha",
+                   params->pock_chambolle_alpha, 
+                   default_params.pock_chambolle_alpha);
+    PRINT_DIFF_BOOL("has_pock_chambolle_alpha",
+                    params->has_pock_chambolle_alpha, 
+                    default_params.has_pock_chambolle_alpha);
+    PRINT_DIFF_BOOL("bound_obj_rescaling",
+                    params->bound_objective_rescaling, 
+                    default_params.bound_objective_rescaling);
+    PRINT_DIFF_INT("sv_max_iter",
+                   params->sv_max_iter, 
+                   default_params.sv_max_iter);
+    PRINT_DIFF_DBL("sv_tol",
+                   params->sv_tol, 
+                   default_params.sv_tol);
+    PRINT_DIFF_INT("evaluation_freq", 
+                   params->termination_evaluation_frequency, 
+                   default_params.termination_evaluation_frequency);
+    PRINT_DIFF_BOOL("feasibility_polishing",
+                    params->feasibility_polishing, 
+                    default_params.feasibility_polishing);
+    PRINT_DIFF_DBL("eps_feas_polish_relative",
+                   params->termination_criteria.eps_feas_polish_relative,
+                   default_params.termination_criteria.eps_feas_polish_relative);
 
     printf("---------------------------------------------------------------------"
            "------------------\n");
@@ -360,6 +444,10 @@ void print_initial_info(const pdhg_parameters_t *params,
     printf("---------------------------------------------------------------------"
            "------------------\n");
 }
+
+#undef PRINT_DIFF_INT
+#undef PRINT_DIFF_DBL
+#undef PRINT_DIFF_BOOL
 
 void pdhg_final_log(const pdhg_solver_state_t *state, bool verbose,
                     termination_reason_t reason)

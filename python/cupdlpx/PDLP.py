@@ -50,4 +50,10 @@ _PARAM_ALIAS = {
     "RestartKp": "k_p",
     # reflection
     "ReflectionCoeff": "reflection_coefficient",
+    # feasibility polishing
+    "FeasibilityPolishing": "feasibility_polishing",
+    "FeasibilityPolishingTol": "eps_feas_polish_relative",
+    # singular value estimation (power method)
+    "SVMaxIter": "sv_max_iter",
+    "SVTol": "sv_tol",
 }
