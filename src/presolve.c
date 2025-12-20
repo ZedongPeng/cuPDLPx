@@ -21,8 +21,6 @@ const char *get_presolve_status_str(enum PresolveStatus_ status)
         return "UNCHANGED";
     case REDUCED:
         return "REDUCED";
-    case UNBOUNDED:
-        return "UNBOUNDED";
     case INFEASIBLE:
         return "INFEASIBLE";
     case UNBNDORINFEAS:
@@ -104,7 +102,7 @@ cupdlpx_presolve_info_t *pslp_presolve(const lp_problem_t *original_prob, const 
         printf("  %-15s : %.3g sec\n", "presolve time", info->presolve_time);
     }
 
-    if (status & INFEASIBLE || status & UNBOUNDED)
+    if (status & INFEASIBLE || status & UNBNDORINFEAS)
     {
         info->problem_solved_during_presolve = true;
         info->reduced_problem = NULL;
@@ -133,10 +131,6 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     if (info->presolve_status == INFEASIBLE)
     {
         result->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE;
-    }
-    else if (info->presolve_status == UNBOUNDED)
-    {
-        result->termination_reason = TERMINATION_REASON_DUAL_INFEASIBLE;
     }
     else if (info->presolve_status == UNBNDORINFEAS)
     {
