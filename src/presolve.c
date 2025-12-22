@@ -148,6 +148,7 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     result->num_reduced_nonzeros = info->presolver->reduced_prob->nnz;
     result->presolve_status = info->presolve_status;
     result->presolve_time = info->presolve_time;
+    result->presolve_stats = *(info->presolver->stats);
     // TODO: Verify if setting solution pointers to NULL affects Python/Julia bindings.
     if (result->num_variables > 0)
     {
@@ -185,6 +186,10 @@ void pslp_postsolve(cupdlpx_presolve_info_t *info,
     memcpy(result->reduced_cost, info->presolver->sol->z, original_prob->num_variables * sizeof(double));
     result->primal_objective_value = info->presolver->sol->obj;
     result->presolve_time = info->presolve_time;
+    // result->presolve_stats = *(info->presolver->stats);
+    if (info->presolver->stats != NULL) {
+        result->presolve_stats = *(info->presolver->stats);
+    }
 }
 
 void cupdlpx_presolve_info_free(cupdlpx_presolve_info_t *info)
