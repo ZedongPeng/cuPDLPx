@@ -61,8 +61,8 @@ __global__ void compute_delta_solution_kernel(
     const double *initial_primal, const double *pdhg_primal,
     double *delta_primal, const double *initial_dual, const double *pdhg_dual,
     double *delta_dual, int n_vars, int n_cons);
-static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state);
-static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state);
+static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major);
+static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major);
 static void halpern_update(pdhg_solver_state_t *state,
                            double reflection_coefficient);
 static void rescale_solution(pdhg_solver_state_t *state);
@@ -122,19 +122,44 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     bool do_restart = false;
     while (state->total_count < params->termination_criteria.iteration_limit)
     {
-        if ((state->is_this_major_iteration || state->total_count == 0) ||
-            (state->total_count % get_print_frequency(state->total_count) == 0))
+        for (int i = 0; i < params->termination_evaluation_frequency - 2; i++)
         {
-            compute_residual(state);
-            if (state->is_this_major_iteration &&
-                state->total_count < 3 * params->termination_evaluation_frequency)
+            state->inner_count++;
+            state->total_count++;
+            compute_next_pdhg_primal_solution(state, false);
+            compute_next_pdhg_dual_solution(state, false);
+            halpern_update(state, params->reflection_coefficient);
+        }
+
+        state->inner_count++;
+        state->total_count++;
+        compute_next_pdhg_primal_solution(state, true);
+        compute_next_pdhg_dual_solution(state, true);
+        halpern_update(state, params->reflection_coefficient);
+
+        state->inner_count++;
+        state->total_count++;
+        compute_next_pdhg_primal_solution(state, true);
+        compute_next_pdhg_dual_solution(state, true);
+        halpern_update(state, params->reflection_coefficient);
+
+        compute_fixed_point_error(state);
+        compute_residual(state);
+
+        if (do_restart) {
+            state->initial_fixed_point_error = state->fixed_point_error;
+            do_restart = false;
+        }
+
+        if (state->total_count % get_print_frequency(state->total_count) == 0)
+        {
+            if (state->total_count < 3 * params->termination_evaluation_frequency)
             {
                 compute_infeasibility_information(state);
             }
 
             state->cumulative_time_sec =
                 (double)(clock() - start_time) / CLOCKS_PER_SEC;
-
             check_termination_criteria(state, &params->termination_criteria);
             display_iteration_stats(state, params->verbose);
             if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED) {
@@ -142,35 +167,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             }
         }
 
-        if ((state->is_this_major_iteration || state->total_count == 0))
-        {
-            do_restart =
-                should_do_adaptive_restart(state, &params->restart_params,
-                                           params->termination_evaluation_frequency);
-            if (do_restart)
-                perform_restart(state, params);
-        }
-
-        state->is_this_major_iteration =
-            ((state->total_count + 1) % params->termination_evaluation_frequency) ==
-            0;
-
-        compute_next_pdhg_primal_solution(state);
-        compute_next_pdhg_dual_solution(state);
-
-        if (state->is_this_major_iteration || do_restart)
-        {
-            compute_fixed_point_error(state);
-            if (do_restart)
-            {
-                state->initial_fixed_point_error = state->fixed_point_error;
-                do_restart = false;
-            }
-        }
-        halpern_update(state, params->reflection_coefficient);
-
-        state->inner_count++;
-        state->total_count++;
+        do_restart = should_do_adaptive_restart(state, &params->restart_params,
+                                        params->termination_evaluation_frequency);
+        if (do_restart)
+            perform_restart(state, params);
     }
 
     if (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
@@ -659,7 +659,7 @@ __global__ void compute_delta_solution_kernel(
     }
 }
 
-static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state)
+static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major)
 {
     CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol,
                                           state->current_dual_solution));
@@ -673,9 +673,9 @@ static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state)
 
     double step = state->step_size / state->primal_weight;
 
-    if (state->is_this_major_iteration ||
-        ((state->total_count + 2) %
-         get_print_frequency(state->total_count + 2)) == 0)
+    // if (state->is_this_major_iteration ||
+    //     ((state->total_count + 1) % get_print_frequency(state->total_count + 1)) == 0)
+    if (is_major)
     {
         compute_next_pdhg_primal_solution_major_kernel<<<state->num_blocks_primal,
                                                          THREADS_PER_BLOCK>>>(
@@ -696,7 +696,7 @@ static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state)
     }
 }
 
-static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state)
+static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major)
 {
     CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol,
                                           state->reflected_primal_solution));
@@ -710,9 +710,10 @@ static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state)
 
     double step = state->step_size * state->primal_weight;
 
-    if (state->is_this_major_iteration ||
-        ((state->total_count + 2) %
-         get_print_frequency(state->total_count + 2)) == 0)
+    // if (state->is_this_major_iteration ||
+    //     ((state->total_count + 1) %
+    //      get_print_frequency(state->total_count + 1)) == 0)
+    if (is_major)
     {
         compute_next_pdhg_dual_solution_major_kernel<<<state->num_blocks_dual,
                                                        THREADS_PER_BLOCK>>>(
@@ -734,7 +735,7 @@ static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state)
 static void halpern_update(pdhg_solver_state_t *state,
                            double reflection_coefficient)
 {
-    double weight = (double)(state->inner_count + 1) / (state->inner_count + 2);
+    double weight = (double)(state->inner_count) / (state->inner_count + 1);
     halpern_update_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
         state->initial_primal_solution, state->current_primal_solution,
         state->reflected_primal_solution, state->initial_dual_solution,
@@ -1141,8 +1142,8 @@ void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_stat
 
         state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
 
-        compute_next_pdhg_primal_solution(state);
-        compute_next_pdhg_dual_solution(state);
+        compute_next_pdhg_primal_solution(state, true); // TODO
+        compute_next_pdhg_dual_solution(state, true); // TODO
 
         if (state->is_this_major_iteration || do_restart)
         {
@@ -1187,8 +1188,8 @@ void dual_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_
 
         state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
 
-        compute_next_pdhg_primal_solution(state);
-        compute_next_pdhg_dual_solution(state);
+        compute_next_pdhg_primal_solution(state, true); // TODO
+        compute_next_pdhg_dual_solution(state, true); // TODO
 
         if (state->is_this_major_iteration || do_restart)
         {
