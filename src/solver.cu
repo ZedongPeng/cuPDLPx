@@ -66,7 +66,7 @@ static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state);
 static void halpern_update(pdhg_solver_state_t *state,
                            double reflection_coefficient);
 static void rescale_solution(pdhg_solver_state_t *state);
-static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem, PresolveStats *presolve_stats);
+static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem);
 static void perform_restart(pdhg_solver_state_t *state,
                             const pdhg_parameters_t *params);
 static void
@@ -187,7 +187,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         feasibility_polish(params, state);
     }
 
-    cupdlpx_result_t *result = create_result_from_state(state, original_problem, presolve_info->presolver->stats);
+    cupdlpx_result_t *result = create_result_from_state(state, original_problem);
 
     if (params->presolve && presolve_info)
     {
@@ -982,7 +982,7 @@ void rescale_info_free(rescale_info_t *info)
     free(info);
 }
 
-static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem, PresolveStats *presolve_stats)
+static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem)
 {
     cupdlpx_result_t *results =
         (cupdlpx_result_t *)safe_calloc(1, sizeof(cupdlpx_result_t));
@@ -1045,11 +1045,11 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, co
     results->termination_reason = state->termination_reason;
     results->feasibility_polishing_time = state->feasibility_polishing_time;
     results->feasibility_iteration = state->feasibility_iteration;
-    if (presolve_stats != NULL) {
-        results->presolve_stats = *presolve_stats;
-    } else {
-        memset(&(results->presolve_stats), 0, sizeof(PresolveStats));
-    }
+    // if (presolve_stats != NULL) {
+    //     results->presolve_stats = *presolve_stats;
+    // } else {
+    //     memset(&(results->presolve_stats), 0, sizeof(PresolveStats));
+    // }
 
     return results;
 }
