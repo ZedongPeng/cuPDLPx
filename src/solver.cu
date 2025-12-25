@@ -122,17 +122,23 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     bool do_restart = false;
     while (state->total_count < params->termination_criteria.iteration_limit)
     {
-        for (int i = 0; i < params->termination_evaluation_frequency - 2; i++)
+        state->inner_count++;
+        state->total_count++;
+        compute_next_pdhg_primal_solution(state, false);
+        compute_next_pdhg_dual_solution(state, false);
+        if (do_restart) {
+            compute_fixed_point_error(state);
+            state->initial_fixed_point_error = state->fixed_point_error;
+            do_restart = false;
+        }
+        halpern_update(state, params->reflection_coefficient);
+
+        for (int i = 1; i < params->termination_evaluation_frequency - 2; i++)
         {
             state->inner_count++;
             state->total_count++;
             compute_next_pdhg_primal_solution(state, false);
             compute_next_pdhg_dual_solution(state, false);
-            if (do_restart) {
-                compute_fixed_point_error(state);
-                state->initial_fixed_point_error = state->fixed_point_error;
-                do_restart = false;
-            }
             halpern_update(state, params->reflection_coefficient);
         }
 
