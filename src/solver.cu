@@ -128,6 +128,11 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             state->total_count++;
             compute_next_pdhg_primal_solution(state, false);
             compute_next_pdhg_dual_solution(state, false);
+            if (do_restart) {
+                compute_fixed_point_error(state);
+                state->initial_fixed_point_error = state->fixed_point_error;
+                do_restart = false;
+            }
             halpern_update(state, params->reflection_coefficient);
         }
 
@@ -141,15 +146,11 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         state->total_count++;
         compute_next_pdhg_primal_solution(state, true);
         compute_next_pdhg_dual_solution(state, true);
+        compute_fixed_point_error(state);
         halpern_update(state, params->reflection_coefficient);
 
-        compute_fixed_point_error(state);
         compute_residual(state);
 
-        if (do_restart) {
-            state->initial_fixed_point_error = state->fixed_point_error;
-            do_restart = false;
-        }
 
         if (state->total_count % get_print_frequency(state->total_count) == 0)
         {
@@ -169,8 +170,9 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
         do_restart = should_do_adaptive_restart(state, &params->restart_params,
                                         params->termination_evaluation_frequency);
-        if (do_restart)
+        if (do_restart) {
             perform_restart(state, params);
+        }
     }
 
     if (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
