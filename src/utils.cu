@@ -697,7 +697,7 @@ void compute_residual(pdhg_solver_state_t *state)
         state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
         CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
 
-    compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
+    compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual, state->primal_product,
         state->constraint_lower_bound, state->constraint_upper_bound,
         state->pdhg_dual_solution, state->dual_residual, state->dual_product,
@@ -750,11 +750,11 @@ void compute_residual(pdhg_solver_state_t *state)
 void compute_infeasibility_information(pdhg_solver_state_t *state)
 {
     primal_infeasibility_project_kernel<<<state->num_blocks_primal,
-                                          THREADS_PER_BLOCK>>>(
+                                          THREADS_PER_BLOCK, 0, state->stream>>>(
         state->delta_primal_solution, state->variable_lower_bound,
         state->variable_upper_bound, state->num_variables);
     dual_infeasibility_project_kernel<<<state->num_blocks_dual,
-                                        THREADS_PER_BLOCK>>>(
+                                        THREADS_PER_BLOCK, 0, state->stream>>>(
         state->delta_dual_solution, state->constraint_lower_bound,
         state->constraint_upper_bound, state->num_constraints);
 
@@ -795,13 +795,13 @@ void compute_infeasibility_information(pdhg_solver_state_t *state)
         (state->constraint_bound_rescaling * state->objective_vector_rescaling);
 
     dual_solution_dual_objective_contribution_kernel<<<state->num_blocks_dual,
-                                                       THREADS_PER_BLOCK>>>(
+                                                       THREADS_PER_BLOCK, 0, state->stream>>>(
         state->constraint_lower_bound_finite_val,
         state->constraint_upper_bound_finite_val, state->delta_dual_solution,
         state->num_constraints, state->primal_slack);
 
     dual_objective_dual_slack_contribution_array_kernel<<<
-        state->num_blocks_primal, THREADS_PER_BLOCK>>>(
+        state->num_blocks_primal, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->dual_product, state->dual_slack,
         state->variable_lower_bound_finite_val,
         state->variable_upper_bound_finite_val, state->num_variables);
@@ -817,12 +817,12 @@ void compute_infeasibility_information(pdhg_solver_state_t *state)
         (state->constraint_bound_rescaling * state->objective_vector_rescaling);
 
     compute_primal_infeasibility_kernel<<<state->num_blocks_dual,
-                                          THREADS_PER_BLOCK>>>(
+                                          THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_product, state->constraint_lower_bound,
         state->constraint_upper_bound, state->num_constraints,
         state->primal_slack, state->constraint_rescaling);
     compute_dual_infeasibility_kernel<<<state->num_blocks_primal,
-                                        THREADS_PER_BLOCK>>>(
+                                        THREADS_PER_BLOCK, 0, state->stream>>>(
         state->dual_product, state->variable_lower_bound,
         state->variable_upper_bound, state->num_variables, state->dual_slack,
         state->variable_rescaling);
@@ -1225,7 +1225,7 @@ void compute_primal_feas_polish_residual(pdhg_solver_state_t *state, const pdhg_
 
     CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE, state->matA, state->vec_primal_sol, &HOST_ZERO, state->vec_primal_prod, CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->primal_spmv_buffer));
 
-    compute_primal_feas_polish_residual_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK>>>(
+    compute_primal_feas_polish_residual_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual, state->primal_product, state->constraint_lower_bound,
         state->constraint_upper_bound, state->constraint_rescaling,
         state->num_constraints);

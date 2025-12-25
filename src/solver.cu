@@ -31,25 +31,26 @@ limitations under the License.
 __global__ void compute_next_pdhg_primal_solution_kernel(
     const double *current_primal, double *reflected_primal,
     const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, double step_size);
+    const double *var_ub, int n, const double *d_step_size);
 __global__ void compute_next_pdhg_primal_solution_major_kernel(
     const double *current_primal, double *pdhg_primal, double *reflected_primal,
     const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, double step_size, double *dual_slack);
+    const double *var_ub, int n, const double *d_step_size, double *dual_slack);
 __global__ void compute_next_pdhg_dual_solution_kernel(
     const double *current_dual, double *reflected_dual,
     const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, double step_size);
+    const double *const_ub, int n, const double *d_step_size);
 __global__ void compute_next_pdhg_dual_solution_major_kernel(
     const double *current_dual, double *pdhg_dual, double *reflected_dual,
     const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, double step_size);
+    const double *const_ub, int n, const double *d_step_size);
 __global__ void
 halpern_update_kernel(const double *initial_primal, double *current_primal,
                       const double *reflected_primal,
                       const double *initial_dual, double *current_dual,
                       const double *reflected_dual, int n_vars, int n_cons,
-                      double weight, double reflection_coeff);
+                      const int *d_base_count, int k_offset,
+                      double reflection_coeff);
 __global__ void rescale_solution_kernel(double *primal_solution,
                                         double *dual_solution,
                                         const double *variable_rescaling,
@@ -64,7 +65,8 @@ __global__ void compute_delta_solution_kernel(
 static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major);
 static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major);
 static void halpern_update(pdhg_solver_state_t *state,
-                           double reflection_coefficient);
+                           double reflection_coefficient,
+                           int k_offset);
 static void rescale_solution(pdhg_solver_state_t *state);
 static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem);
 static void perform_restart(pdhg_solver_state_t *state,
@@ -93,6 +95,23 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
 static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     const pdhg_solver_state_t *original_state);
 
+static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
+{
+    double current_primal_step = state->step_size / state->primal_weight;
+    double current_dual_step = state->step_size * state->primal_weight;
+
+    CUDA_CHECK(cudaMemcpyAsync(state->d_primal_step_size, &current_primal_step,
+                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
+    CUDA_CHECK(cudaMemcpyAsync(state->d_dual_step_size, &current_dual_step,
+                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
+}
+
+static void sync_inner_count_to_gpu(pdhg_solver_state_t *state)
+{
+    CUDA_CHECK(cudaMemcpyAsync(state->d_inner_count, &state->inner_count,
+                               sizeof(int), cudaMemcpyHostToDevice, state->stream));
+}
+
 cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                            const lp_problem_t *original_problem)
 {
@@ -118,67 +137,101 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
     rescale_info_free(rescale_info);
     initialize_step_size_and_primal_weight(state, params);
+    sync_step_sizes_to_gpu(state);
+
     clock_t start_time = clock();
     bool do_restart = false;
+
+    cudaGraphExec_t graphExec = NULL;
+    bool graph_created = false;
+
     while (state->total_count < params->termination_criteria.iteration_limit)
     {
-        state->inner_count++;
-        state->total_count++;
+        sync_inner_count_to_gpu(state);
+
         compute_next_pdhg_primal_solution(state, false);
         compute_next_pdhg_dual_solution(state, false);
-        if (do_restart) {
+
+        if (do_restart)
+        {
             compute_fixed_point_error(state);
             state->initial_fixed_point_error = state->fixed_point_error;
             do_restart = false;
         }
-        halpern_update(state, params->reflection_coefficient);
+        halpern_update(state, params->reflection_coefficient, 1);
 
-        for (int i = 1; i < params->termination_evaluation_frequency - 2; i++)
+        if (params->termination_evaluation_frequency > 3)
         {
-            state->inner_count++;
-            state->total_count++;
-            compute_next_pdhg_primal_solution(state, false);
-            compute_next_pdhg_dual_solution(state, false);
-            halpern_update(state, params->reflection_coefficient);
+            if (!graph_created)
+            {
+                // Start CUDA graph capture
+                cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
+
+                for (int i = 2; i <= params->termination_evaluation_frequency - 2; i++)
+                {
+                    compute_next_pdhg_primal_solution(state, false);
+                    compute_next_pdhg_dual_solution(state, false);
+                    halpern_update(state, params->reflection_coefficient, i);
+                }
+
+                compute_next_pdhg_primal_solution(state, true);
+                compute_next_pdhg_dual_solution(state, true);
+                halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 1);
+
+                compute_next_pdhg_primal_solution(state, true);
+                compute_next_pdhg_dual_solution(state, true);
+                // end CUDA graph capture
+
+                cudaGraph_t graph;
+                CUDA_CHECK(cudaStreamEndCapture(state->stream, &graph));
+                CUDA_CHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+                CUDA_CHECK(cudaGraphDestroy(graph));
+                graph_created = true;
+            }
+
+            CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         }
-
-        state->inner_count++;
-        state->total_count++;
-        compute_next_pdhg_primal_solution(state, true);
-        compute_next_pdhg_dual_solution(state, true);
-        halpern_update(state, params->reflection_coefficient);
-
-        state->inner_count++;
-        state->total_count++;
-        compute_next_pdhg_primal_solution(state, true);
-        compute_next_pdhg_dual_solution(state, true);
-        compute_fixed_point_error(state);
-        halpern_update(state, params->reflection_coefficient);
+        compute_fixed_point_error(state); // TODO: move into graph?
+        halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 0);
 
         compute_residual(state);
+        state->inner_count += params->termination_evaluation_frequency;
+        state->total_count += params->termination_evaluation_frequency;
 
+        // Check Infeasibility
+        if (state->total_count < 3 * params->termination_evaluation_frequency)
+        {
+            compute_infeasibility_information(state);
+        }
 
+        // Check Termination
+        state->cumulative_time_sec =
+            (double)(clock() - start_time) / CLOCKS_PER_SEC; // TODO move this inside.
+        check_termination_criteria(state, &params->termination_criteria);
+        if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED)
+        {
+            break;
+        }
+
+        // Logging
         if (state->total_count % get_print_frequency(state->total_count) == 0)
         {
-            if (state->total_count < 3 * params->termination_evaluation_frequency)
-            {
-                compute_infeasibility_information(state);
-            }
-
-            state->cumulative_time_sec =
-                (double)(clock() - start_time) / CLOCKS_PER_SEC;
-            check_termination_criteria(state, &params->termination_criteria);
             display_iteration_stats(state, params->verbose);
-            if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED) {
-                break;
-            }
         }
 
+        // Check Adaptive Restart
         do_restart = should_do_adaptive_restart(state, &params->restart_params,
-                                        params->termination_evaluation_frequency);
-        if (do_restart) {
+                                                params->termination_evaluation_frequency);
+        if (do_restart)
+        {
             perform_restart(state, params);
+            sync_step_sizes_to_gpu(state);
         }
+    }
+
+    if (graphExec)
+    {
+        CUDA_CHECK(cudaGraphExecDestroy(graphExec));
     }
 
     if (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
@@ -508,6 +561,14 @@ initialize_solver_state(const pdhg_parameters_t *params,
         state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
         CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
 
+    CUDA_CHECK(cudaMalloc(&state->d_primal_step_size, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_dual_step_size, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_inner_count, sizeof(int)));
+
+    CUDA_CHECK(cudaMemset(state->d_primal_step_size, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_dual_step_size, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_inner_count, 0, sizeof(int)));
+
     CUDA_CHECK(
         cudaMalloc(&state->ones_primal_d, state->num_variables * sizeof(double)));
     CUDA_CHECK(
@@ -529,17 +590,24 @@ initialize_solver_state(const pdhg_parameters_t *params,
     CUDA_CHECK(cudaMemcpy(state->ones_dual_d, ones_dual_h,
                           state->num_constraints * sizeof(double),
                           cudaMemcpyHostToDevice));
+
+    // --- CUDA Graph Initialization ---
+    CUDA_CHECK(cudaStreamCreate(&state->stream));
+    CUSPARSE_CHECK(cusparseSetStream(state->sparse_handle, state->stream));
+    CUBLAS_CHECK(cublasSetStream(state->blas_handle, state->stream));
+
     free(ones_dual_h);
-    if (params->verbose) {
+    if (params->verbose)
+    {
         printf("---------------------------------------------------------------------"
-            "------------------\n");
+               "------------------\n");
         printf("%s | %s | %s | %s \n", "   runtime    ", "    objective     ",
-            "  absolute residuals   ", "  relative residuals   ");
+               "  absolute residuals   ", "  relative residuals   ");
         printf("%s %s | %s %s | %s %s %s | %s %s %s \n", "  iter", "  time ",
-            " pr obj ", "  du obj ", " pr res", " du res", "  gap  ", " pr res",
-            " du res", "  gap  ");
+               " pr obj ", "  du obj ", " pr res", " du res", "  gap  ", " pr res",
+               " du res", "  gap  ");
         printf("---------------------------------------------------------------------"
-            "------------------\n");
+               "------------------\n");
     }
 
     return state;
@@ -548,9 +616,10 @@ initialize_solver_state(const pdhg_parameters_t *params,
 __global__ void compute_next_pdhg_primal_solution_kernel(
     const double *current_primal, double *reflected_primal,
     const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, double step_size)
+    const double *var_ub, int n, const double *d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
     if (i < n)
     {
         double temp =
@@ -563,9 +632,10 @@ __global__ void compute_next_pdhg_primal_solution_kernel(
 __global__ void compute_next_pdhg_primal_solution_major_kernel(
     const double *current_primal, double *pdhg_primal, double *reflected_primal,
     const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, double step_size, double *dual_slack)
+    const double *var_ub, int n, const double *d_step_size, double *dual_slack)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
     if (i < n)
     {
         double temp =
@@ -579,9 +649,10 @@ __global__ void compute_next_pdhg_primal_solution_major_kernel(
 __global__ void compute_next_pdhg_dual_solution_kernel(
     const double *current_dual, double *reflected_dual,
     const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, double step_size)
+    const double *const_ub, int n, const double *d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
     if (i < n)
     {
         double temp = current_dual[i] / step_size - primal_product[i];
@@ -593,9 +664,10 @@ __global__ void compute_next_pdhg_dual_solution_kernel(
 __global__ void compute_next_pdhg_dual_solution_major_kernel(
     const double *current_dual, double *pdhg_dual, double *reflected_dual,
     const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, double step_size)
+    const double *const_ub, int n, const double *d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
     if (i < n)
     {
         double temp = current_dual[i] / step_size - primal_product[i];
@@ -610,9 +682,12 @@ halpern_update_kernel(const double *initial_primal, double *current_primal,
                       const double *reflected_primal,
                       const double *initial_dual, double *current_dual,
                       const double *reflected_dual, int n_vars, int n_cons,
-                      double weight, double reflection_coeff)
+                      const int *d_base_count, int k_offset,
+                      double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int current_k = *d_base_count + k_offset;
+    double weight = (double)(current_k) / (double)(current_k + 1);
     if (i < n_vars)
     {
         double reflected = reflection_coeff * reflected_primal[i] +
@@ -686,21 +761,21 @@ static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool i
     if (is_major)
     {
         compute_next_pdhg_primal_solution_major_kernel<<<state->num_blocks_primal,
-                                                         THREADS_PER_BLOCK>>>(
+                                                         THREADS_PER_BLOCK, 0, state->stream>>>(
             state->current_primal_solution, state->pdhg_primal_solution,
             state->reflected_primal_solution, state->dual_product,
             state->objective_vector, state->variable_lower_bound,
-            state->variable_upper_bound, state->num_variables, step,
+            state->variable_upper_bound, state->num_variables, state->d_primal_step_size,
             state->dual_slack);
     }
     else
     {
         compute_next_pdhg_primal_solution_kernel<<<state->num_blocks_primal,
-                                                   THREADS_PER_BLOCK>>>(
+                                                   THREADS_PER_BLOCK, 0, state->stream>>>(
             state->current_primal_solution, state->reflected_primal_solution,
             state->dual_product, state->objective_vector,
             state->variable_lower_bound, state->variable_upper_bound,
-            state->num_variables, step);
+            state->num_variables, state->d_primal_step_size);
     }
 }
 
@@ -718,43 +793,42 @@ static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_
 
     double step = state->step_size * state->primal_weight;
 
-    // if (state->is_this_major_iteration ||
-    //     ((state->total_count + 1) %
-    //      get_print_frequency(state->total_count + 1)) == 0)
     if (is_major)
     {
         compute_next_pdhg_dual_solution_major_kernel<<<state->num_blocks_dual,
-                                                       THREADS_PER_BLOCK>>>(
+                                                       THREADS_PER_BLOCK, 0, state->stream>>>(
             state->current_dual_solution, state->pdhg_dual_solution,
             state->reflected_dual_solution, state->primal_product,
             state->constraint_lower_bound, state->constraint_upper_bound,
-            state->num_constraints, step);
+            state->num_constraints, state->d_dual_step_size);
     }
     else
     {
         compute_next_pdhg_dual_solution_kernel<<<state->num_blocks_dual,
-                                                 THREADS_PER_BLOCK>>>(
+                                                 THREADS_PER_BLOCK, 0, state->stream>>>(
             state->current_dual_solution, state->reflected_dual_solution,
             state->primal_product, state->constraint_lower_bound,
-            state->constraint_upper_bound, state->num_constraints, step);
+            state->constraint_upper_bound, state->num_constraints, state->d_dual_step_size);
     }
 }
 
 static void halpern_update(pdhg_solver_state_t *state,
-                           double reflection_coefficient)
+                           double reflection_coefficient,
+                           int k_offset)
 {
     double weight = (double)(state->inner_count) / (state->inner_count + 1);
-    halpern_update_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
+    halpern_update_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->initial_primal_solution, state->current_primal_solution,
         state->reflected_primal_solution, state->initial_dual_solution,
         state->current_dual_solution, state->reflected_dual_solution,
-        state->num_variables, state->num_constraints, weight,
+        state->num_variables, state->num_constraints,
+        state->d_inner_count, k_offset,
         reflection_coefficient);
 }
 
 static void rescale_solution(pdhg_solver_state_t *state)
 {
-    rescale_solution_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
+    rescale_solution_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->pdhg_primal_solution, state->pdhg_dual_solution,
         state->variable_rescaling, state->constraint_rescaling,
         state->objective_vector_rescaling, state->constraint_bound_rescaling,
@@ -765,7 +839,7 @@ static void perform_restart(pdhg_solver_state_t *state,
                             const pdhg_parameters_t *params)
 {
     compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
-                                    THREADS_PER_BLOCK>>>(
+                                    THREADS_PER_BLOCK, 0, state->stream>>>(
         state->initial_primal_solution, state->pdhg_primal_solution,
         state->delta_primal_solution, state->initial_dual_solution,
         state->pdhg_dual_solution, state->delta_dual_solution,
@@ -858,7 +932,7 @@ initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
 static void compute_fixed_point_error(pdhg_solver_state_t *state)
 {
     compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
-                                    THREADS_PER_BLOCK>>>(
+                                    THREADS_PER_BLOCK, 0, state->stream>>>(
         state->current_primal_solution, state->reflected_primal_solution,
         state->delta_primal_solution, state->current_dual_solution,
         state->reflected_dual_solution, state->delta_dual_solution,
@@ -973,6 +1047,12 @@ void pdhg_solver_state_free(pdhg_solver_state_t *state)
         CUDA_CHECK(cudaFree(state->ones_primal_d));
     if (state->ones_dual_d)
         CUDA_CHECK(cudaFree(state->ones_dual_d));
+    if (state->d_primal_step_size)
+        CUDA_CHECK(cudaFree(state->d_primal_step_size));
+    if (state->d_dual_step_size)
+        CUDA_CHECK(cudaFree(state->d_dual_step_size));
+    if (state->d_inner_count)
+        CUDA_CHECK(cudaFree(state->d_inner_count));
 
     free(state);
 }
@@ -1007,7 +1087,7 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, co
         state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
         CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
 
-    compute_and_rescale_reduced_cost_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK>>>(
+    compute_and_rescale_reduced_cost_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->dual_slack,
         state->objective_vector,
         state->dual_product,
@@ -1151,7 +1231,7 @@ void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_stat
         state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
 
         compute_next_pdhg_primal_solution(state, true); // TODO
-        compute_next_pdhg_dual_solution(state, true); // TODO
+        compute_next_pdhg_dual_solution(state, true);   // TODO
 
         if (state->is_this_major_iteration || do_restart)
         {
@@ -1162,7 +1242,7 @@ void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_stat
                 do_restart = false;
             }
         }
-        halpern_update(state, params->reflection_coefficient);
+        halpern_update(state, params->reflection_coefficient, 0); // TODO
 
         state->inner_count++;
         state->total_count++;
@@ -1197,7 +1277,7 @@ void dual_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_
         state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
 
         compute_next_pdhg_primal_solution(state, true); // TODO
-        compute_next_pdhg_dual_solution(state, true); // TODO
+        compute_next_pdhg_dual_solution(state, true);   // TODO
 
         if (state->is_this_major_iteration || do_restart)
         {
@@ -1208,7 +1288,7 @@ void dual_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_
                 do_restart = false;
             }
         }
-        halpern_update(state, params->reflection_coefficient);
+        halpern_update(state, params->reflection_coefficient, 0); // TODO
 
         state->inner_count++;
         state->total_count++;
@@ -1489,7 +1569,7 @@ __global__ void compute_delta_dual_solution_kernel(
 
 static void compute_primal_fixed_point_error(pdhg_solver_state_t *state)
 {
-    compute_delta_primal_solution_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK>>>(
+    compute_delta_primal_solution_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->current_primal_solution,
         state->reflected_primal_solution,
         state->delta_primal_solution,
@@ -1505,7 +1585,7 @@ static void compute_primal_fixed_point_error(pdhg_solver_state_t *state)
 
 static void compute_dual_fixed_point_error(pdhg_solver_state_t *state)
 {
-    compute_delta_dual_solution_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK>>>(
+    compute_delta_dual_solution_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->current_dual_solution,
         state->reflected_dual_solution,
         state->delta_dual_solution,
