@@ -83,11 +83,6 @@ extern "C"
         int max_iterations,
         double tolerance);
 
-    void compute_interaction_and_movement(
-        pdhg_solver_state_t *solver_state,
-        double *interaction,
-        double *movement);
-
     bool should_do_adaptive_restart(
         pdhg_solver_state_t *solver_state,
         const restart_parameters_t *restart_params,
@@ -108,6 +103,7 @@ extern "C"
     int get_print_frequency(int iter);
 
     void compute_residual(pdhg_solver_state_t *state);
+    void compute_residual_device_mode(pdhg_solver_state_t *state);
 
     void compute_infeasibility_information(pdhg_solver_state_t *state);
 

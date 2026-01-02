@@ -78,6 +78,7 @@ static pdhg_solver_state_t *initialize_solver_state(const pdhg_parameters_t *par
                                                     const lp_problem_t *original_problem,
                                                     const rescale_info_t *rescale_info);
 static void compute_fixed_point_error(pdhg_solver_state_t *state);
+static void compute_initial_fixed_point_error(pdhg_solver_state_t *state);
 void pdhg_solver_state_free(pdhg_solver_state_t *state);
 void rescale_info_free(rescale_info_t *info);
 
@@ -94,6 +95,7 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
     const pdhg_solver_state_t *original_state);
 static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     const pdhg_solver_state_t *original_state);
+static void compute_fixed_point_error_device_mode(pdhg_solver_state_t *state);
 
 static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
 {
@@ -103,6 +105,8 @@ static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
     CUDA_CHECK(cudaMemcpyAsync(state->d_primal_step_size, &current_primal_step,
                                sizeof(double), cudaMemcpyHostToDevice, state->stream));
     CUDA_CHECK(cudaMemcpyAsync(state->d_dual_step_size, &current_dual_step,
+                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
+    CUDA_CHECK(cudaMemcpyAsync(state->d_primal_weight, &state->primal_weight,
                                sizeof(double), cudaMemcpyHostToDevice, state->stream));
 }
 
@@ -144,9 +148,13 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
     cudaGraphExec_t graphExec = NULL;
     bool graph_created = false;
+    pdhg_solver_metrics_t *h_metrics;
+    cudaMallocHost(&h_metrics, sizeof(pdhg_solver_metrics_t));
 
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_DEVICE);
     while (state->total_count < params->termination_criteria.iteration_limit)
     {
+        // Inner Loop, 1...k
         sync_inner_count_to_gpu(state);
 
         compute_next_pdhg_primal_solution(state, false);
@@ -154,8 +162,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
         if (do_restart)
         {
-            compute_fixed_point_error(state);
-            state->initial_fixed_point_error = state->fixed_point_error;
+            compute_initial_fixed_point_error(state);
             do_restart = false;
         }
         halpern_update(state, params->reflection_coefficient, 1);
@@ -180,6 +187,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
                 compute_next_pdhg_primal_solution(state, true);
                 compute_next_pdhg_dual_solution(state, true);
+
+                compute_fixed_point_error_device_mode(state);
+                halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 0);
+                compute_residual_device_mode(state);
                 // end CUDA graph capture
 
                 cudaGraph_t graph;
@@ -191,12 +202,26 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
             CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         }
-        compute_fixed_point_error(state); // TODO: move into graph?
-        halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 0);
-
-        compute_residual(state);
         state->inner_count += params->termination_evaluation_frequency;
         state->total_count += params->termination_evaluation_frequency;
+
+        CUDA_CHECK(cudaMemcpyAsync(h_metrics, state->d_metrics, sizeof(pdhg_solver_metrics_t), 
+                    cudaMemcpyDeviceToHost, state->stream));
+        CUDA_CHECK(cudaStreamSynchronize(state->stream));
+        // TODO: move h_metrics into solver_state
+        state->absolute_primal_residual = h_metrics->primal_residual;
+        state->absolute_dual_residual = h_metrics->dual_residual;
+        state->primal_objective_value = h_metrics->primal_objective;
+        state->dual_objective_base = h_metrics->dual_objective_base;
+        state->dual_slack_sum = h_metrics->dual_slack_sum;
+        state->objective_gap = h_metrics->objective_gap;
+        state->relative_objective_gap = h_metrics->relative_objective_gap;
+        state->fixed_point_primal_norm = h_metrics->fixed_point_primal_norm;
+        state->fixed_point_dual_norm = h_metrics->fixed_point_dual_norm;
+        state->fixed_point_cross_term = h_metrics->fixed_point_cross_term;
+
+        compute_fixed_point_error(state);
+        compute_residual(state);
 
         // Check Infeasibility
         if (state->total_count < 3 * params->termination_evaluation_frequency)
@@ -563,11 +588,42 @@ initialize_solver_state(const pdhg_parameters_t *params,
 
     CUDA_CHECK(cudaMalloc(&state->d_primal_step_size, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&state->d_dual_step_size, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_primal_weight, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&state->d_inner_count, sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&state->d_fixed_point_primal_norm, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_fixed_point_dual_norm, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_fixed_point_cross_term, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_fixed_point_error, sizeof(double)));
+
+    CUDA_CHECK(cudaMalloc(&state->d_metrics, sizeof(pdhg_solver_metrics_t)));
+    CUDA_CHECK(cudaMalloc(&state->d_absolute_primal_residual, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_absolute_dual_residual, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_primal_objective_value, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_dual_objective_base, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&state->d_dual_slack_sum, sizeof(double)));
 
     CUDA_CHECK(cudaMemset(state->d_primal_step_size, 0, sizeof(double)));
     CUDA_CHECK(cudaMemset(state->d_dual_step_size, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_primal_weight, 0, sizeof(double)));
     CUDA_CHECK(cudaMemset(state->d_inner_count, 0, sizeof(int)));
+    CUDA_CHECK(cudaMemset(state->d_fixed_point_primal_norm, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_fixed_point_dual_norm, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_fixed_point_cross_term, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_fixed_point_error, 0, sizeof(double)));
+
+    CUDA_CHECK(cudaMemset(state->d_metrics, 0, sizeof(pdhg_solver_metrics_t)));
+    CUDA_CHECK(cudaMemset(state->d_absolute_primal_residual, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_absolute_dual_residual, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_primal_objective_value, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_dual_objective_base, 0, sizeof(double)));
+    CUDA_CHECK(cudaMemset(state->d_dual_slack_sum, 0, sizeof(double)));
+
+    state->relative_primal_residual = INFINITY;
+    state->absolute_primal_residual = INFINITY;
+    state->relative_dual_residual = INFINITY;
+    state->absolute_dual_residual = INFINITY;
+    state->relative_objective_gap = INFINITY;
+    state->objective_gap = INFINITY;
 
     CUDA_CHECK(
         cudaMalloc(&state->ones_primal_d, state->num_variables * sizeof(double)));
@@ -846,11 +902,13 @@ static void perform_restart(pdhg_solver_state_t *state,
         state->num_variables, state->num_constraints);
 
     double primal_dist, dual_dist;
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST);
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
                                    state->delta_primal_solution, 1,
                                    &primal_dist));
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
                                    state->delta_dual_solution, 1, &dual_dist));
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_DEVICE);
 
     double ratio_infeas =
         state->relative_dual_residual / state->relative_primal_residual;
@@ -929,7 +987,7 @@ initialize_step_size_and_primal_weight(pdhg_solver_state_t *state,
     state->best_primal_weight = state->primal_weight;
 }
 
-static void compute_fixed_point_error(pdhg_solver_state_t *state)
+static void compute_initial_fixed_point_error(pdhg_solver_state_t *state)
 {
     compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
                                     THREADS_PER_BLOCK, 0, state->stream>>>(
@@ -954,6 +1012,7 @@ static void compute_fixed_point_error(pdhg_solver_state_t *state)
     double dual_norm = 0.0;
     double cross_term = 0.0;
 
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST);
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
                                    state->delta_dual_solution, 1, &dual_norm));
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
@@ -961,13 +1020,144 @@ static void compute_fixed_point_error(pdhg_solver_state_t *state)
                                    &primal_norm));
     movement = primal_norm * primal_norm * state->primal_weight +
                dual_norm * dual_norm / state->primal_weight;
-
     CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
                             state->dual_product, 1, state->delta_primal_solution,
                             1, &cross_term));
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_DEVICE);
     interaction = 2 * state->step_size * cross_term;
 
+    state->initial_fixed_point_error = sqrt(movement + interaction);
+}
+
+
+static void compute_fixed_point_error(pdhg_solver_state_t *state)
+{
+    // compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
+    //                                 THREADS_PER_BLOCK, 0, state->stream>>>(
+    //     state->current_primal_solution, state->reflected_primal_solution,
+    //     state->delta_primal_solution, state->current_dual_solution,
+    //     state->reflected_dual_solution, state->delta_dual_solution,
+    //     state->num_variables, state->num_constraints);
+
+    // CUSPARSE_CHECK(
+    //     cusparseDnVecSetValues(state->vec_dual_sol, state->delta_dual_solution));
+    // CUSPARSE_CHECK(
+    //     cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
+
+    // CUSPARSE_CHECK(cusparseSpMV(
+    //     state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+    //     state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
+    //     CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
+
+    double interaction, movement;
+
+    // double primal_norm = 0.0;
+    // double dual_norm = 0.0;
+    // double cross_term = 0.0;
+
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
+    //                                state->delta_dual_solution, 1, &dual_norm));
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
+    //                                state->delta_primal_solution, 1,
+    //                                &primal_norm));
+    movement = state->fixed_point_primal_norm * state->fixed_point_primal_norm * state->primal_weight +
+               state->fixed_point_dual_norm * state->fixed_point_dual_norm / state->primal_weight;
+
+    // CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
+    //                         state->dual_product, 1, state->delta_primal_solution,
+    //                         1, &cross_term));
+    interaction = 2 * state->step_size * state->fixed_point_cross_term;
+
     state->fixed_point_error = sqrt(movement + interaction);
+}
+
+// __global__ void compute_final_error_kernel(
+//     const double* d_primal_norm, 
+//     const double* d_dual_norm, 
+//     const double* d_cross_term,
+//     double* d_output_error,
+//     double* d_primal_weight, 
+//     double step_size) 
+// {
+//     if (threadIdx.x == 0 && blockIdx.x == 0) {
+//         double p_norm = *d_primal_norm;
+//         double d_norm = *d_dual_norm;
+//         double cross = *d_cross_term;
+
+//         double primal_weight = *d_primal_weight;
+
+//         double movement = p_norm * p_norm * primal_weight + 
+//                           d_norm * d_norm / primal_weight;
+//         double interaction = 2.0 * step_size * cross;
+        
+//         *d_output_error = sqrt(fmax(0.0, movement + interaction));
+//     }
+// }
+
+static void compute_fixed_point_error_device_mode(pdhg_solver_state_t *state)
+{
+    compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
+                                    THREADS_PER_BLOCK, 0, state->stream>>>(
+        state->current_primal_solution, state->reflected_primal_solution,
+        state->delta_primal_solution, state->current_dual_solution,
+        state->reflected_dual_solution, state->delta_dual_solution,
+        state->num_variables, state->num_constraints);
+
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->delta_dual_solution));
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
+
+    CUSPARSE_CHECK(cusparseSpMV(
+        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+        state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
+        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
+    
+    // norm(delta_dual) -> d_val_1
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
+    //                                state->delta_dual_solution, 1, state->d_fixed_point_dual_norm));
+    
+    // // norm(delta_primal) -> d_val_2
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
+    //                                state->delta_primal_solution, 1, state->d_fixed_point_primal_norm));
+    // // dot(dual_prod, delta_primal) -> d_val_3
+    // CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
+    //                         state->dual_product, 1, state->delta_primal_solution,
+    //                         1, state->d_fixed_point_cross_term));
+
+    // CUDA_CHECK(cudaMemcpyAsync(&state->fixed_point_primal_norm, state->d_fixed_point_primal_norm,
+    //                            sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->fixed_point_dual_norm, state->d_fixed_point_dual_norm,
+    //                            sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->fixed_point_cross_term, state->d_fixed_point_cross_term,
+    //                            sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+
+    ////-----------------------
+        // norm(delta_dual) -> d_val_1
+    CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
+                                   state->delta_dual_solution, 1, &state->d_metrics->fixed_point_dual_norm));
+    
+    // norm(delta_primal) -> d_val_2
+    CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
+                                   state->delta_primal_solution, 1, &state->d_metrics->fixed_point_primal_norm));
+    // dot(dual_prod, delta_primal) -> d_val_3
+    CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
+                            state->dual_product, 1, state->delta_primal_solution,
+                            1, &state->d_metrics->fixed_point_cross_term));
+    //-------------------------
+
+
+    // compute_final_error_kernel<<<1, 1, 0, state->stream>>>(
+    //     state->d_primal_norm, // primal norm ptr
+    //     state->d_dual_norm, // dual norm ptr
+    //     state->d_cross_term, // cross term ptr
+    //     state->d_fixed_point_error,
+    //     state->d_primal_weight,
+    //     state->step_size
+    // );
+
+    // CUDA_CHECK(cudaMemcpyAsync(&state->fixed_point_error, state->d_fixed_point_error, 
+    //                 sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+
+    // cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST);
 }
 
 void pdhg_solver_state_free(pdhg_solver_state_t *state)
@@ -1051,6 +1241,8 @@ void pdhg_solver_state_free(pdhg_solver_state_t *state)
         CUDA_CHECK(cudaFree(state->d_primal_step_size));
     if (state->d_dual_step_size)
         CUDA_CHECK(cudaFree(state->d_dual_step_size));
+    if (state->d_primal_weight)
+        CUDA_CHECK(cudaFree(state->d_primal_weight));
     if (state->d_inner_count)
         CUDA_CHECK(cudaFree(state->d_inner_count));
 

@@ -176,25 +176,6 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
     return sqrt(sigma_max_sq);
 }
 
-void compute_interaction_and_movement(pdhg_solver_state_t *state,
-                                      double *interaction, double *movement)
-{
-    double dual_norm, primal_norm, cross_term;
-
-    CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
-                                   state->delta_dual_solution, 1, &dual_norm));
-    CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
-                                   state->delta_primal_solution, 1,
-                                   &primal_norm));
-    *movement = 0.5 * (primal_norm * primal_norm * state->primal_weight +
-                       dual_norm * dual_norm / state->primal_weight);
-
-    CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
-                            state->dual_product, 1, state->delta_primal_solution,
-                            1, &cross_term));
-    *interaction = fabs(cross_term);
-}
-
 const char *termination_reason_to_string(termination_reason_t reason)
 {
     switch (reason)
@@ -680,7 +661,125 @@ static double get_vector_sum(cublasHandle_t handle, int n, double *ones_d,
     return sum;
 }
 
+// TODO: change this to CUB.
+static void get_vector_sum_gpu(cublasHandle_t handle, int n, double *ones_d,
+                               const double *x_d, double *d_result)
+{
+    if (n <= 0) {
+        return;
+    }
+    CUBLAS_CHECK(cublasDdot(handle, n, x_d, 1, ones_d, 1, d_result));
+}
+
 void compute_residual(pdhg_solver_state_t *state)
+{
+    // cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution);
+    // cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution);
+    // cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product);
+    // cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product);
+
+    // CUSPARSE_CHECK(cusparseSpMV(
+    //     state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+    //     state->matA, state->vec_primal_sol, &HOST_ZERO, state->vec_primal_prod,
+    //     CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->primal_spmv_buffer));
+
+    // CUSPARSE_CHECK(cusparseSpMV(
+    //     state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+    //     state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
+    //     CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
+
+    // compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
+    //     state->primal_residual, state->primal_product,
+    //     state->constraint_lower_bound, state->constraint_upper_bound,
+    //     state->pdhg_dual_solution, state->dual_residual, state->dual_product,
+    //     state->dual_slack, state->objective_vector, state->constraint_rescaling,
+    //     state->variable_rescaling, state->primal_slack,
+    //     state->constraint_lower_bound_finite_val,
+    //     state->constraint_upper_bound_finite_val, state->num_constraints,
+    //     state->num_variables);
+
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
+    //                                state->primal_residual, 1,
+    //                                &state->absolute_primal_residual));
+    state->absolute_primal_residual /= state->constraint_bound_rescaling;
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
+    //                                state->dual_residual, 1,
+    //                                &state->absolute_dual_residual));
+    state->absolute_dual_residual /= state->objective_vector_rescaling;
+
+    // CUBLAS_CHECK(cublasDdot(
+    //     state->blas_handle, state->num_variables, state->objective_vector, 1,
+    //     state->pdhg_primal_solution, 1, &state->primal_objective_value));
+    state->primal_objective_value =
+        state->primal_objective_value / (state->constraint_bound_rescaling *
+                                         state->objective_vector_rescaling) +
+        state->objective_constant;
+
+    // double base_dual_objective;
+    // CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
+    //                         state->dual_slack, 1, state->pdhg_primal_solution, 1,
+    //                         &base_dual_objective));
+    // double dual_slack_sum =
+    //     get_vector_sum(state->blas_handle, state->num_constraints,
+    //                    state->ones_dual_d, state->primal_slack);
+    state->dual_objective_value = (state->dual_objective_base + state->dual_slack_sum) /
+                                      (state->constraint_bound_rescaling *
+                                       state->objective_vector_rescaling) +
+                                  state->objective_constant;
+
+    state->relative_primal_residual =
+        state->absolute_primal_residual / (1.0 + state->constraint_bound_norm);
+    state->relative_dual_residual =
+        state->absolute_dual_residual / (1.0 + state->objective_vector_norm);
+    state->objective_gap =
+        fabs(state->primal_objective_value - state->dual_objective_value);
+    state->relative_objective_gap =
+        state->objective_gap / (1.0 + fabs(state->primal_objective_value) +
+                                fabs(state->dual_objective_value));
+}
+
+// __global__ void compute_residual_metrics_kernel(
+//     const double* d_primal_resid_norm,
+//     const double* d_dual_resid_norm,
+//     const double* d_primal_obj_dot,
+//     const double* d_dual_obj_base, // dual_slack dot primal
+//     const double* d_dual_slack_sum,
+//     double constraint_bound_rescaling,
+//     double objective_vector_rescaling,
+//     double objective_constant,
+//     double constraint_bound_norm,
+//     double objective_vector_norm,
+//     pdhg_solver_metrics_t* d_metrics
+// ) {
+//     if (threadIdx.x == 0 && blockIdx.x == 0) {
+//         // 1. Primal Residual
+//         double abs_prim_res = *d_primal_resid_norm / constraint_bound_rescaling;
+//         d_metrics->primal_residual = abs_prim_res / (1.0 + constraint_bound_norm);
+
+//         // 2. Dual Residual
+//         double abs_dual_res = *d_dual_resid_norm / objective_vector_rescaling;
+//         d_metrics->dual_residual = abs_dual_res / (1.0 + objective_vector_norm);
+
+//         // 3. Primal Objective
+//         double prim_obj = (*d_primal_obj_dot) / 
+//                           (constraint_bound_rescaling * objective_vector_rescaling) + 
+//                           objective_constant;
+//         d_metrics->primal_objective = prim_obj;
+
+//         // 4. Dual Objective
+//         double dual_obj = (*d_dual_obj_base + *d_dual_slack_sum) / 
+//                           (constraint_bound_rescaling * objective_vector_rescaling) + 
+//                           objective_constant;
+//         d_metrics->dual_objective = dual_obj;
+
+//         // 5. Gap
+//         double gap = fabs(prim_obj - dual_obj);
+//         d_metrics->objective_gap = gap;
+//         d_metrics->relative_objective_gap = gap / (1.0 + fabs(prim_obj) + fabs(dual_obj));
+//     }
+// }
+
+void compute_residual_device_mode(pdhg_solver_state_t *state)
 {
     cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution);
     cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution);
@@ -707,48 +806,92 @@ void compute_residual(pdhg_solver_state_t *state)
         state->constraint_upper_bound_finite_val, state->num_constraints,
         state->num_variables);
 
+    // // 1. Primal Residual Norm
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
+    //                                state->primal_residual, 1, 
+    //                                state->d_absolute_primal_residual)); 
+    // // missing scaling
+    // // 2. Dual Residual Norm
+    // CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
+    //                                state->dual_residual, 1,
+    //                                state->d_absolute_dual_residual));
+
+    // // 3. Primal Objective Dot
+    // CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables, 
+    //                         state->objective_vector, 1,
+    //                         state->pdhg_primal_solution, 1, 
+    //                         state->d_primal_objective_value));
+
+    // // 4. Dual Objective Components
+    // CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
+    //                         state->dual_slack, 1, state->pdhg_primal_solution, 1,
+    //                         state->d_dual_objective_base));
+
+    // // get_vector_sum_gpu(..., state->d_val_dual_slack_sum);
+    // get_vector_sum_gpu(state->blas_handle, state->num_constraints, state->ones_dual_d,
+    //                            state->primal_slack, state->d_dual_slack_sum);
+    // // get_vector_sum(state->blas_handle, state->num_constraints,
+    // //             state->ones_dual_d, state->primal_slack);
+
+    // CUDA_CHECK(cudaMemcpyAsync(&state->absolute_primal_residual, state->d_absolute_primal_residual,
+    //                         sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->absolute_dual_residual, state->d_absolute_dual_residual,
+    //                         sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->primal_objective_value, state->d_primal_objective_value,
+    //                         sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->dual_objective_base, state->d_dual_objective_base,
+    //                         sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+    // CUDA_CHECK(cudaMemcpyAsync(&state->dual_slack_sum, state->d_dual_slack_sum,
+    //                         sizeof(double), cudaMemcpyDeviceToHost, state->stream));
+
+
+    //------------------------------
+
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_constraints,
-                                   state->primal_residual, 1,
-                                   &state->absolute_primal_residual));
-    state->absolute_primal_residual /= state->constraint_bound_rescaling;
+                                   state->primal_residual, 1, 
+                                   &state->d_metrics->primal_residual)); 
+    // missing scaling
+    // 2. Dual Residual Norm
     CUBLAS_CHECK(cublasDnrm2_v2_64(state->blas_handle, state->num_variables,
                                    state->dual_residual, 1,
-                                   &state->absolute_dual_residual));
-    state->absolute_dual_residual /= state->objective_vector_rescaling;
+                                   &state->d_metrics->dual_residual));
 
-    CUBLAS_CHECK(cublasDdot(
-        state->blas_handle, state->num_variables, state->objective_vector, 1,
-        state->pdhg_primal_solution, 1, &state->primal_objective_value));
-    state->primal_objective_value =
-        state->primal_objective_value / (state->constraint_bound_rescaling *
-                                         state->objective_vector_rescaling) +
-        state->objective_constant;
+    // 3. Primal Objective Dot
+    CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables, 
+                            state->objective_vector, 1,
+                            state->pdhg_primal_solution, 1, 
+                            &state->d_metrics->primal_objective));
 
-    double base_dual_objective;
+    // 4. Dual Objective Components
     CUBLAS_CHECK(cublasDdot(state->blas_handle, state->num_variables,
                             state->dual_slack, 1, state->pdhg_primal_solution, 1,
-                            &base_dual_objective));
-    double dual_slack_sum =
-        get_vector_sum(state->blas_handle, state->num_constraints,
-                       state->ones_dual_d, state->primal_slack);
-    state->dual_objective_value = (base_dual_objective + dual_slack_sum) /
-                                      (state->constraint_bound_rescaling *
-                                       state->objective_vector_rescaling) +
-                                  state->objective_constant;
+                            &state->d_metrics->dual_objective_base));
 
-    state->relative_primal_residual =
-        state->absolute_primal_residual / (1.0 + state->constraint_bound_norm);
-    state->relative_dual_residual =
-        state->absolute_dual_residual / (1.0 + state->objective_vector_norm);
-    state->objective_gap =
-        fabs(state->primal_objective_value - state->dual_objective_value);
-    state->relative_objective_gap =
-        state->objective_gap / (1.0 + fabs(state->primal_objective_value) +
-                                fabs(state->dual_objective_value));
+    get_vector_sum_gpu(state->blas_handle, state->num_constraints, state->ones_dual_d,
+                               state->primal_slack, &state->d_metrics->dual_slack_sum);
+    // get_vector_sum(state->blas_handle, state->num_constraints,
+    //             state->ones_dual_d, state->primal_slack);
+    //------------------------------ 
+
+
+    // compute_residual_metrics_kernel<<<1, 1, 0, state->stream>>>(
+    //     state->d_absolute_primal_residual,
+    //     state->d_absolute_dual_residual,
+    //     state->d_primal_objective_value,
+    //     state->d_dual_objective_base,
+    //     state->d_dual_slack_sum,
+    //     state->constraint_bound_rescaling,
+    //     state->objective_vector_rescaling,
+    //     state->objective_constant,
+    //     state->constraint_bound_norm,
+    //     state->objective_vector_norm,
+    //     state->d_metrics
+    // );
 }
 
 void compute_infeasibility_information(pdhg_solver_state_t *state)
 {
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST);
     primal_infeasibility_project_kernel<<<state->num_blocks_primal,
                                           THREADS_PER_BLOCK, 0, state->stream>>>(
         state->delta_primal_solution, state->variable_lower_bound,
@@ -844,6 +987,7 @@ void compute_infeasibility_information(pdhg_solver_state_t *state)
         state->max_dual_ray_infeasibility = 0.0;
         state->dual_ray_objective = 0.0;
     }
+    cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_DEVICE);
 }
 
 // helper function to allocate and fill or copy an array

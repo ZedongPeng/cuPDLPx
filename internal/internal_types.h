@@ -31,6 +31,19 @@ typedef struct
 	double *val;
 } cu_sparse_matrix_csr_t;
 
+typedef struct {
+    double primal_residual;
+    double dual_residual;
+    double primal_objective;
+	double dual_objective_base;
+	double dual_slack_sum;
+    double objective_gap;
+    double relative_objective_gap;
+	double fixed_point_primal_norm;
+	double fixed_point_dual_norm;
+	double fixed_point_cross_term;
+} pdhg_solver_metrics_t;
+
 typedef struct
 {
 	int num_variables;
@@ -67,6 +80,7 @@ typedef struct
 	double *d_primal_step_size;
 	double *d_dual_step_size;
 	double primal_weight;
+	double *d_primal_weight;
 	int total_count;
 	bool is_this_major_iteration;
 	double primal_weight_error_sum;
@@ -85,12 +99,19 @@ typedef struct
 
 	double *primal_residual;
 	double absolute_primal_residual;
+	double *d_absolute_primal_residual;
 	double relative_primal_residual;
 	double *dual_residual;
 	double absolute_dual_residual;
+	double *d_absolute_dual_residual;
 	double relative_dual_residual;
 	double primal_objective_value;
+	double *d_primal_objective_value;
 	double dual_objective_value;
+	double dual_objective_base;
+	double *d_dual_objective_base;
+	double dual_slack_sum;
+	double *d_dual_slack_sum;
 	double objective_gap;
 	double relative_objective_gap;
 	double max_primal_ray_infeasibility;
@@ -98,6 +119,7 @@ typedef struct
 	double primal_ray_linear_objective;
 	double dual_ray_objective;
 	termination_reason_t termination_reason;
+	pdhg_solver_metrics_t *d_metrics;
 
 	double *delta_primal_solution;
 	double *delta_dual_solution;
@@ -106,6 +128,13 @@ typedef struct
 	double last_trial_fixed_point_error;
 	int inner_count;
 	int *d_inner_count;
+	double fixed_point_primal_norm;
+	double fixed_point_dual_norm;
+	double fixed_point_cross_term;
+    double *d_fixed_point_primal_norm;
+    double *d_fixed_point_dual_norm;
+    double *d_fixed_point_cross_term;
+    double *d_fixed_point_error;
 
 	cusparseHandle_t sparse_handle;
 	cublasHandle_t blas_handle;
