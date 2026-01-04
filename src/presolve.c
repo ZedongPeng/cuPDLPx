@@ -169,8 +169,7 @@ void pslp_postsolve(cupdlpx_presolve_info_t *info,
     postsolve(info->presolver,
               result->primal_solution,
               result->dual_solution,
-              result->reduced_cost,
-              result->primal_objective_value);
+              result->reduced_cost);
 
     result->num_reduced_variables = info->presolver->reduced_prob->n;
     result->num_reduced_constraints = info->presolver->reduced_prob->m;
