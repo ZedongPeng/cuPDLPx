@@ -94,6 +94,28 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
     const pdhg_solver_state_t *original_state);
 static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     const pdhg_solver_state_t *original_state);
+__global__ void compute_next_primal_solution_kernel(
+    double *current_primal, double *reflected_primal, const double *initial_primal,
+    const double *dual_product, const double *objective, const double *var_lb,
+    const double *var_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff);
+__global__ void compute_next_primal_solution_major_kernel(
+    double *current_primal, double *pdhg_primal, double *reflected_primal, const double *initial_primal,
+    const double *dual_product, const double *objective, const double *var_lb,
+    const double *var_ub, int n, const double *d_step_size, double *dual_slack,
+    const int *d_base_count, int k_offset, double reflection_coeff);
+__global__ void compute_next_dual_solution_kernel(
+    double *current_dual, double *reflected_dual, const double *initial_dual,
+    const double *primal_product, const double *const_lb,
+    const double *const_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff);
+__global__ void compute_next_dual_solution_major_kernel(
+    double *current_dual, double *pdhg_dual, double *reflected_dual, const double *initial_dual,
+    const double *primal_product, const double *const_lb,
+    const double *const_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff);
+static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k_offset, const double reflection_coefficient, bool is_major);
+static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_offset, const double reflection_coefficient, bool is_major);
 
 static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
 {
@@ -149,8 +171,8 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     {
         sync_inner_count_to_gpu(state);
 
-        compute_next_pdhg_primal_solution(state, false);
-        compute_next_pdhg_dual_solution(state, false);
+        compute_next_primal_solution(state, 1, params->reflection_coefficient, true);
+        compute_next_dual_solution(state, 1, params->reflection_coefficient, true);
 
         if (do_restart)
         {
@@ -158,7 +180,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             state->initial_fixed_point_error = state->fixed_point_error;
             do_restart = false;
         }
-        halpern_update(state, params->reflection_coefficient, 1);
 
         if (params->termination_evaluation_frequency > 3)
         {
@@ -169,17 +190,15 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
                 for (int i = 2; i <= params->termination_evaluation_frequency - 2; i++)
                 {
-                    compute_next_pdhg_primal_solution(state, false);
-                    compute_next_pdhg_dual_solution(state, false);
-                    halpern_update(state, params->reflection_coefficient, i);
+                    compute_next_primal_solution(state, i, params->reflection_coefficient, false);
+                    compute_next_dual_solution(state, i, params->reflection_coefficient, false);
                 }
 
-                compute_next_pdhg_primal_solution(state, true);
-                compute_next_pdhg_dual_solution(state, true);
-                halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 1);
+                compute_next_primal_solution(state, params->termination_evaluation_frequency - 1, params->reflection_coefficient, true);
+                compute_next_dual_solution(state, params->termination_evaluation_frequency - 1, params->reflection_coefficient, true);
 
-                compute_next_pdhg_primal_solution(state, true);
-                compute_next_pdhg_dual_solution(state, true);
+                compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+                compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
                 // end CUDA graph capture
 
                 cudaGraph_t graph;
@@ -192,7 +211,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         }
         compute_fixed_point_error(state); // TODO: move into graph?
-        halpern_update(state, params->reflection_coefficient, params->termination_evaluation_frequency - 0);
 
         compute_residual(state);
         state->inner_count += params->termination_evaluation_frequency;
@@ -613,6 +631,52 @@ initialize_solver_state(const pdhg_parameters_t *params,
     return state;
 }
 
+__global__ void compute_next_primal_solution_kernel(
+    double *current_primal, double *reflected_primal, const double *initial_primal,
+    const double *dual_product, const double *objective, const double *var_lb,
+    const double *var_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
+    int current_k = *d_base_count + k_offset;
+    double weight = (double)(current_k) / (double)(current_k + 1);
+    if (i < n)
+    {
+        double temp =
+            current_primal[i] - step_size * (objective[i] - dual_product[i]);
+        double temp_proj = fmax(var_lb[i], fmin(temp, var_ub[i]));
+        reflected_primal[i] = 2.0 * temp_proj - current_primal[i];
+        // TODO, simplify reflected
+        double reflected = reflection_coeff * reflected_primal[i] +
+                           (1.0 - reflection_coeff) * current_primal[i];
+        current_primal[i] = weight * reflected + (1.0 - weight) * initial_primal[i];
+    }
+}
+
+__global__ void compute_next_primal_solution_major_kernel(
+    double *current_primal, double *pdhg_primal, double *reflected_primal, const double *initial_primal,
+    const double *dual_product, const double *objective, const double *var_lb,
+    const double *var_ub, int n, const double *d_step_size, double *dual_slack,
+    const int *d_base_count, int k_offset, double reflection_coeff)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
+    int current_k = *d_base_count + k_offset;
+    double weight = (double)(current_k) / (double)(current_k + 1);
+    if (i < n)
+    {
+        double temp =
+            current_primal[i] - step_size * (objective[i] - dual_product[i]);
+        pdhg_primal[i] = fmax(var_lb[i], fmin(temp, var_ub[i]));
+        dual_slack[i] = (pdhg_primal[i] - temp) / step_size;
+        reflected_primal[i] = 2.0 * pdhg_primal[i] - current_primal[i];
+        double reflected = reflection_coeff * reflected_primal[i] +
+                           (1.0 - reflection_coeff) * current_primal[i];
+        current_primal[i] = weight * reflected + (1.0 - weight) * initial_primal[i];
+    }
+}
+
 __global__ void compute_next_pdhg_primal_solution_kernel(
     const double *current_primal, double *reflected_primal,
     const double *dual_product, const double *objective, const double *var_lb,
@@ -643,6 +707,49 @@ __global__ void compute_next_pdhg_primal_solution_major_kernel(
         pdhg_primal[i] = fmax(var_lb[i], fmin(temp, var_ub[i]));
         dual_slack[i] = (pdhg_primal[i] - temp) / step_size;
         reflected_primal[i] = 2.0 * pdhg_primal[i] - current_primal[i];
+    }
+}
+
+__global__ void compute_next_dual_solution_kernel(
+    double *current_dual, double *reflected_dual, const double *initial_dual,
+    const double *primal_product, const double *const_lb,
+    const double *const_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
+    int current_k = *d_base_count + k_offset;
+    double weight = (double)(current_k) / (double)(current_k + 1);
+    if (i < n)
+    {
+        double temp = current_dual[i] / step_size - primal_product[i];
+        double temp_proj = fmax(-const_ub[i], fmin(temp, -const_lb[i]));
+        reflected_dual[i] = 2.0 * (temp - temp_proj) * step_size - current_dual[i];
+        double reflected = reflection_coeff * reflected_dual[i] +
+                    (1.0 - reflection_coeff) * current_dual[i];
+        current_dual[i] = weight * reflected + (1.0 - weight) * initial_dual[i];
+    }
+}
+
+__global__ void compute_next_dual_solution_major_kernel(
+    double *current_dual, double *pdhg_dual, double *reflected_dual, const double *initial_dual,
+    const double *primal_product, const double *const_lb,
+    const double *const_ub, int n, const double *d_step_size,
+    const int *d_base_count, int k_offset, double reflection_coeff)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double step_size = *d_step_size;
+    int current_k = *d_base_count + k_offset;
+    double weight = (double)(current_k) / (double)(current_k + 1);
+    if (i < n)
+    {
+        double temp = current_dual[i] / step_size - primal_product[i];
+        double temp_proj = fmax(-const_ub[i], fmin(temp, -const_lb[i]));
+        pdhg_dual[i] = (temp - temp_proj) * step_size;
+        reflected_dual[i] = 2.0 * pdhg_dual[i] - current_dual[i];
+        double reflected = reflection_coeff * reflected_dual[i] +
+            (1.0 - reflection_coeff) * current_dual[i];
+        current_dual[i] = weight * reflected + (1.0 - weight) * initial_dual[i];
     }
 }
 
@@ -742,6 +849,45 @@ __global__ void compute_delta_solution_kernel(
     }
 }
 
+static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k_offset, const double reflection_coefficient, bool is_major)
+{
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol,
+                                          state->current_dual_solution));
+    CUSPARSE_CHECK(
+        cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
+
+    CUSPARSE_CHECK(cusparseSpMV(
+        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+        state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
+        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
+
+    double step = state->step_size / state->primal_weight;
+
+    // if (state->is_this_major_iteration ||
+    //     ((state->total_count + 1) % get_print_frequency(state->total_count + 1)) == 0)
+    if (is_major)
+    {
+        compute_next_primal_solution_major_kernel<<<state->num_blocks_primal,
+                                                         THREADS_PER_BLOCK, 0, state->stream>>>(
+            state->current_primal_solution, state->pdhg_primal_solution,
+            state->reflected_primal_solution, state->initial_primal_solution, state->dual_product,
+            state->objective_vector, state->variable_lower_bound,
+            state->variable_upper_bound, state->num_variables, state->d_primal_step_size,
+            state->dual_slack, state->d_inner_count, k_offset, reflection_coefficient);
+    }
+    else
+    {
+        compute_next_primal_solution_kernel<<<state->num_blocks_primal,
+                                                   THREADS_PER_BLOCK, 0, state->stream>>>(
+            state->current_primal_solution, state->reflected_primal_solution, state->initial_primal_solution,
+            state->dual_product, state->objective_vector,
+            state->variable_lower_bound, state->variable_upper_bound,
+            state->num_variables, state->d_primal_step_size,
+            state->d_inner_count, k_offset, reflection_coefficient
+        );
+    }
+}
+
 static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major)
 {
     CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol,
@@ -776,6 +922,42 @@ static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool i
             state->dual_product, state->objective_vector,
             state->variable_lower_bound, state->variable_upper_bound,
             state->num_variables, state->d_primal_step_size);
+    }
+}
+
+static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_offset, const double reflection_coefficient, bool is_major)
+{
+    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol,
+                                          state->reflected_primal_solution));
+    CUSPARSE_CHECK(
+        cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
+
+    CUSPARSE_CHECK(cusparseSpMV(
+        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
+        state->matA, state->vec_primal_sol, &HOST_ZERO, state->vec_primal_prod,
+        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->primal_spmv_buffer));
+
+    double step = state->step_size * state->primal_weight;
+
+    if (is_major)
+    {
+        compute_next_dual_solution_major_kernel<<<state->num_blocks_dual,
+                                                       THREADS_PER_BLOCK, 0, state->stream>>>(
+            state->current_dual_solution, state->pdhg_dual_solution,
+            state->reflected_dual_solution, state->initial_dual_solution, state->primal_product,
+            state->constraint_lower_bound, state->constraint_upper_bound,
+            state->num_constraints, state->d_dual_step_size,
+            state->d_inner_count, k_offset, reflection_coefficient
+        );
+    }
+    else
+    {
+        compute_next_dual_solution_kernel<<<state->num_blocks_dual,
+                                                 THREADS_PER_BLOCK, 0, state->stream>>>(
+            state->current_dual_solution, state->reflected_dual_solution, state->initial_dual_solution,
+            state->primal_product, state->constraint_lower_bound,
+            state->constraint_upper_bound, state->num_constraints, state->d_dual_step_size,
+            state->d_inner_count, k_offset, reflection_coefficient);
     }
 }
 
@@ -933,8 +1115,8 @@ static void compute_fixed_point_error(pdhg_solver_state_t *state)
 {
     compute_delta_solution_kernel<<<state->num_blocks_primal_dual,
                                     THREADS_PER_BLOCK, 0, state->stream>>>(
-        state->current_primal_solution, state->reflected_primal_solution,
-        state->delta_primal_solution, state->current_dual_solution,
+        state->pdhg_primal_solution, state->reflected_primal_solution,
+        state->delta_primal_solution, state->pdhg_dual_solution,
         state->reflected_dual_solution, state->delta_dual_solution,
         state->num_variables, state->num_constraints);
 
