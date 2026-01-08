@@ -212,7 +212,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         }
         compute_fixed_point_error(state); // TODO: move into graph?
 
-        compute_residual(state);
+        compute_residual(state, params->optimality_norm);
         state->inner_count += params->termination_evaluation_frequency;
         state->total_count += params->termination_evaluation_frequency;
 
@@ -867,12 +867,12 @@ __global__ void compute_delta_solution_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_vars)
     {
-        delta_primal[i] = pdhg_primal[i] - initial_primal[i];
+        delta_primal[i] = (pdhg_primal[i] - initial_primal[i]) * 10;
     }
     else if (i < n_vars + n_cons)
     {
         int idx = i - n_vars;
-        delta_dual[idx] = pdhg_dual[idx] - initial_dual[idx];
+        delta_dual[idx] = (pdhg_dual[idx] - initial_dual[idx]) * 10;
     }
 }
 
