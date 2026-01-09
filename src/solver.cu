@@ -867,12 +867,12 @@ __global__ void compute_delta_solution_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_vars)
     {
-        delta_primal[i] = (pdhg_primal[i] - initial_primal[i]) * 10;
+        delta_primal[i] = (pdhg_primal[i] - initial_primal[i]) * 2;
     }
     else if (i < n_vars + n_cons)
     {
         int idx = i - n_vars;
-        delta_dual[idx] = (pdhg_dual[idx] - initial_dual[idx]) * 10;
+        delta_dual[idx] = (pdhg_dual[idx] - initial_dual[idx]) * 2;
     }
 }
 
