@@ -196,12 +196,18 @@ cupdlpx_result_t *solve_lp_problem(const lp_problem_t *prob,
 
     // prepare parameters: use defaults if not provided
     pdhg_parameters_t local_params;
+    printf("params.verbose = %d\n", params ? params->verbose : 0);
+    fflush(stdout);
     if (params)
     {
+        printf("Using provided parameters.\n");
+        fflush(stdout);
         local_params = *params;
     }
     else
     {
+        printf("Using default parameters.\n");
+        fflush(stdout);
         set_default_parameters(&local_params);
     }
 
