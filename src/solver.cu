@@ -188,14 +188,11 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                 // Start CUDA graph capture
                 cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
 
-                for (int i = 2; i <= params->termination_evaluation_frequency - 2; i++)
+                for (int i = 2; i <= params->termination_evaluation_frequency - 1; i++)
                 {
                     compute_next_primal_solution(state, i, params->reflection_coefficient, false);
                     compute_next_dual_solution(state, i, params->reflection_coefficient, false);
                 }
-
-                compute_next_primal_solution(state, params->termination_evaluation_frequency - 1, params->reflection_coefficient, true);
-                compute_next_dual_solution(state, params->termination_evaluation_frequency - 1, params->reflection_coefficient, true);
 
                 compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
                 compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
