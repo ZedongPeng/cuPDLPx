@@ -102,7 +102,7 @@ cupdlpx_presolve_info_t *pslp_presolve(const lp_problem_t *original_prob, const 
         printf("  %-15s : %.3g sec\n", "presolve time", info->presolve_time);
     }
 
-    if (status & INFEASIBLE || status & UNBNDORINFEAS)
+    if (status & INFEASIBLE || status & UNBNDORINFEAS || info->presolver->reduced_prob->n == 0)
     {
         info->problem_solved_during_presolve = true;
         info->reduced_problem = NULL;
@@ -127,6 +127,22 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
 {
 
     cupdlpx_result_t *result = (cupdlpx_result_t *)safe_calloc(1, sizeof(cupdlpx_result_t));
+    result->num_variables = original_prob->num_variables;
+    result->num_constraints = original_prob->num_constraints;
+    result->num_nonzeros = original_prob->constraint_matrix_num_nonzeros;
+    result->num_reduced_variables = info->presolver->reduced_prob->n;
+    result->num_reduced_constraints = info->presolver->reduced_prob->m;
+    result->num_reduced_nonzeros = info->presolver->reduced_prob->nnz;
+    result->presolve_status = info->presolve_status;
+    result->presolve_time = info->presolve_time;
+
+    if (info->presolver->reduced_prob->n == 0)
+    {
+        result->termination_reason = TERMINATION_REASON_OPTIMAL;
+        result->primal_objective_value = info->presolver->sol->obj;
+        pslp_postsolve(info, result, original_prob);
+        return result;
+    }
 
     if (info->presolve_status == INFEASIBLE)
     {
@@ -140,14 +156,7 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     {
         result->termination_reason = TERMINATION_REASON_UNSPECIFIED;
     }
-    result->num_variables = original_prob->num_variables;
-    result->num_constraints = original_prob->num_constraints;
-    result->num_nonzeros = original_prob->constraint_matrix_num_nonzeros;
-    result->num_reduced_variables = info->presolver->reduced_prob->n;
-    result->num_reduced_constraints = info->presolver->reduced_prob->m;
-    result->num_reduced_nonzeros = info->presolver->reduced_prob->nnz;
-    result->presolve_status = info->presolve_status;
-    result->presolve_time = info->presolve_time;
+
     // result->presolve_stats = *(info->presolver->stats);
     // TODO: Verify if setting solution pointers to NULL affects Python/Julia bindings.
     if (result->num_variables > 0)
@@ -162,15 +171,22 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     return result;
 }
 
-void pslp_postsolve(cupdlpx_presolve_info_t *info,
+void pslp_postsolve(const cupdlpx_presolve_info_t *info,
                     cupdlpx_result_t *result,
                     const lp_problem_t *original_prob)
 {
-    postsolve(info->presolver,
-              result->primal_solution,
-              result->dual_solution,
-              result->reduced_cost,
-              result->primal_objective_value);
+    if (info->presolver->reduced_prob->n > 0)
+    {
+        postsolve(info->presolver,
+                result->primal_solution,
+                result->dual_solution,
+                result->reduced_cost,
+                result->primal_objective_value);
+    }
+    else
+    {
+        postsolve(info->presolver, NULL, NULL, NULL, 0);
+    }
 
     result->num_reduced_variables = info->presolver->reduced_prob->n;
     result->num_reduced_constraints = info->presolver->reduced_prob->m;
@@ -184,6 +200,19 @@ void pslp_postsolve(cupdlpx_presolve_info_t *info,
     memcpy(result->primal_solution, info->presolver->sol->x, original_prob->num_variables * sizeof(double));
     memcpy(result->dual_solution, info->presolver->sol->y, original_prob->num_constraints * sizeof(double));
     memcpy(result->reduced_cost, info->presolver->sol->z, original_prob->num_variables * sizeof(double));
+
+    if (info->presolver->reduced_prob->n == 0)
+    {
+        double obj = 0.0;
+        for (int i = 0; i < original_prob->num_variables; i++)
+        {
+            obj += original_prob->objective_vector[i] * result->primal_solution[i];
+        }
+        obj += original_prob->objective_constant;
+        result->primal_objective_value = obj;
+        result->dual_objective_value = obj;
+        return;
+    }
     // result->primal_objective_value = info->presolver->sol->obj; // This is a bug in PSLP. We don't need to updated primal_objective_value since offset has been updated during presolve. Therefore, the original problem and reduced problem have the same objective value.
     result->presolve_time = info->presolve_time;
     // if (info->presolver->stats != NULL) {
