@@ -105,7 +105,7 @@ __global__ void compute_next_primal_solution_major_kernel(
     const double *var_ub, int n, const double *d_step_size, double *dual_slack,
     const int *d_base_count, int k_offset, double reflection_coeff);
 __global__ void compute_next_dual_solution_kernel(
-    double *current_dual, double *reflected_dual, const double *initial_dual,
+    double *current_dual, const double *initial_dual,
     const double *primal_product, const double *const_lb,
     const double *const_ub, int n, const double *d_step_size,
     const int *d_base_count, int k_offset, double reflection_coeff);
@@ -735,7 +735,7 @@ __global__ void compute_next_pdhg_primal_solution_major_kernel(
 }
 
 __global__ void compute_next_dual_solution_kernel(
-    double *current_dual, double *reflected_dual, const double *initial_dual,
+    double *current_dual, const double *initial_dual,
     const double *primal_product, const double *const_lb,
     const double *const_ub, int n, const double *d_step_size,
     const int *d_base_count, int k_offset, double reflection_coeff)
@@ -748,8 +748,7 @@ __global__ void compute_next_dual_solution_kernel(
     {
         double temp = current_dual[i] / step_size - primal_product[i];
         double temp_proj = fmax(-const_ub[i], fmin(temp, -const_lb[i]));
-        reflected_dual[i] = 2.0 * (temp - temp_proj) * step_size - current_dual[i];
-        double reflected = reflection_coeff * reflected_dual[i] +
+        double reflected = reflection_coeff * (2.0 * (temp - temp_proj) * step_size - current_dual[i]) +
                     (1.0 - reflection_coeff) * current_dual[i];
         current_dual[i] = weight * reflected + (1.0 - weight) * initial_dual[i];
     }
@@ -978,7 +977,7 @@ static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_of
     {
         compute_next_dual_solution_kernel<<<state->num_blocks_dual,
                                                  THREADS_PER_BLOCK, 0, state->stream>>>(
-            state->current_dual_solution, state->reflected_dual_solution, state->initial_dual_solution,
+            state->current_dual_solution, state->initial_dual_solution,
             state->primal_product, state->constraint_lower_bound,
             state->constraint_upper_bound, state->num_constraints, state->d_dual_step_size,
             state->d_inner_count, k_offset, reflection_coefficient);
