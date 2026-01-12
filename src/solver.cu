@@ -477,6 +477,14 @@ initialize_solver_state(const pdhg_parameters_t *params,
     size_t primal_spmv_buffer_size;
     size_t dual_spmv_buffer_size;
 
+    printf("Initializing cuSPARSE structures...\n");
+    printf("num_constraints = %d\n", state->num_constraints);
+    printf("num_variables = %d\n", state->num_variables);
+    printf("num_nonzeros = %d\n", state->constraint_matrix->num_nonzeros);
+    printf(state->constraint_matrix->row_ptr == nullptr ? "row_ptr is null\n" : "row_ptr is not null\n");
+    printf(state->constraint_matrix->col_ind == nullptr ? "col_ind is null\n" : "col_ind is not null\n");
+    printf(state->constraint_matrix->val == nullptr ? "val is null\n" : "val is not null\n");
+    fflush(stdout);
     CUSPARSE_CHECK(cusparseCreateCsr(
         &state->matA, state->num_constraints, state->num_variables,
         state->constraint_matrix->num_nonzeros, state->constraint_matrix->row_ptr,
