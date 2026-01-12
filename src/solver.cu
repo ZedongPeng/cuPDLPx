@@ -96,11 +96,15 @@ static pdhg_solver_state_t *initialize_dual_feas_polish_state(
 cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                            const lp_problem_t *original_problem)
 {
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     print_initial_info(params, original_problem);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     cupdlpx_presolve_info_t *presolve_info = NULL;
     const lp_problem_t *working_problem = original_problem;
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     if (params->presolve)
     {
@@ -115,8 +119,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         working_problem = presolve_info->reduced_problem;
     }
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     rescale_info_t *rescale_info = rescale_problem(params, working_problem);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     pdhg_solver_state_t *state = initialize_solver_state(params, working_problem, rescale_info);
 
     rescale_info_free(rescale_info);
@@ -225,6 +231,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
                         const rescale_info_t *rescale_info)
 {
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     pdhg_solver_state_t *state =
         (pdhg_solver_state_t *)safe_calloc(1, sizeof(pdhg_solver_state_t));
 
@@ -254,6 +261,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
 
     state->rescaling_time_sec = rescale_info->rescaling_time_sec;
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
 #define ALLOC_AND_COPY(dest, src, bytes)  \
     CUDA_CHECK(cudaMalloc(&dest, bytes)); \
@@ -285,6 +293,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     }
     printf("\n");
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     ALLOC_AND_COPY(state->constraint_matrix->row_ptr,
                    rescale_info->scaled_problem->constraint_matrix_row_pointers,
                    (n_cons + 1) * sizeof(int));
@@ -297,6 +306,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
                    rescale_info->scaled_problem->constraint_matrix_num_nonzeros *
                        sizeof(double));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK(cudaMalloc(&state->constraint_matrix_t->row_ptr,
                           (n_vars + 1) * sizeof(int)));
     CUDA_CHECK(
@@ -308,11 +318,13 @@ initialize_solver_state(const pdhg_parameters_t *params,
                    rescale_info->scaled_problem->constraint_matrix_num_nonzeros *
                        sizeof(double)));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     CUSPARSE_CHECK(cusparseCreate(&state->sparse_handle));
     CUBLAS_CHECK(cublasCreate(&state->blas_handle));
     CUBLAS_CHECK(
         cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     size_t buffer_size = 0;
     void *buffer = nullptr;
@@ -325,8 +337,10 @@ initialize_solver_state(const pdhg_parameters_t *params,
         state->constraint_matrix_t->col_ind, CUDA_R_64F, CUSPARSE_ACTION_NUMERIC,
         CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG_DEFAULT, &buffer_size));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK(cudaMalloc(&buffer, buffer_size));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     CUSPARSE_CHECK(cusparseCsr2cscEx2(
         state->sparse_handle, state->constraint_matrix->num_rows,
@@ -339,6 +353,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
 
     CUDA_CHECK(cudaFree(buffer));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     ALLOC_AND_COPY(state->variable_lower_bound,
                    rescale_info->scaled_problem->variable_lower_bound, var_bytes);
@@ -360,6 +375,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     state->constraint_bound_rescaling = rescale_info->con_bound_rescale;
     state->objective_vector_rescaling = rescale_info->obj_vec_rescale;
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
 #define ALLOC_ZERO(dest, bytes)           \
     CUDA_CHECK(cudaMalloc(&dest, bytes)); \
@@ -383,6 +399,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     ALLOC_ZERO(state->primal_residual, con_bytes);
     ALLOC_ZERO(state->delta_dual_solution, con_bytes);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     if (working_problem->primal_start)
     {
@@ -400,6 +417,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         free(rescaled);
     }
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (working_problem->dual_start)
     {
         double *rescaled = (double *)safe_malloc(con_bytes);
@@ -516,6 +534,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     size_t dual_spmv_buffer_size;
 
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     printf("Initializing cuSPARSE structures...\n");
     printf("num_constraints = %d\n", state->num_constraints);
@@ -533,6 +552,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         CUDA_R_64F));
 
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     CUSPARSE_CHECK(cusparseCreateCsr(
         &state->matAt, state->num_variables, state->num_constraints,
@@ -541,6 +561,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         state->constraint_matrix_t->val, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
         CUSPARSE_INDEX_BASE_ZERO, CUDA_R_64F));
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     CUSPARSE_CHECK(cusparseCreateDnVec(&state->vec_primal_sol,
                                        state->num_variables,

@@ -378,7 +378,11 @@ void print_initial_info(const pdhg_parameters_t *params,
                         const lp_problem_t *problem)
 {
     pdhg_parameters_t default_params;
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     set_default_parameters(&default_params);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (!params->verbose)
     {
         return;

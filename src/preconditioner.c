@@ -222,6 +222,7 @@ rescale_info_t *rescale_problem(const pdhg_parameters_t *params,
         (rescale_info_t *)safe_calloc(1, sizeof(rescale_info_t));
     rescale_info->scaled_problem = deepcopy_problem(working_problem);
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (rescale_info->scaled_problem == NULL)
     {
         fprintf(stderr,
@@ -231,6 +232,7 @@ rescale_info_t *rescale_problem(const pdhg_parameters_t *params,
     int num_cons = working_problem->num_constraints;
     int num_vars = working_problem->num_variables;
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     rescale_info->con_rescale = safe_malloc(num_cons * sizeof(double));
     rescale_info->var_rescale = safe_malloc(num_vars * sizeof(double));
     for (int i = 0; i < num_cons; ++i)
@@ -243,6 +245,7 @@ rescale_info_t *rescale_problem(const pdhg_parameters_t *params,
                        rescale_info->con_rescale, rescale_info->var_rescale);
     }
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (params->has_pock_chambolle_alpha)
     {
         pock_chambolle_rescaling(
@@ -250,6 +253,7 @@ rescale_info_t *rescale_problem(const pdhg_parameters_t *params,
             rescale_info->con_rescale, rescale_info->var_rescale);
     }
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (params->bound_objective_rescaling)
     {
         double bound_norm_sq = 0.0;
@@ -304,6 +308,7 @@ rescale_info_t *rescale_problem(const pdhg_parameters_t *params,
         rescale_info->obj_vec_rescale = 1.0;
     }
     CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     rescale_info->rescaling_time_sec =
         (double)(clock() - start_rescaling) / CLOCKS_PER_SEC;
     return rescale_info;
