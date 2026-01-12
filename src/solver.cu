@@ -254,6 +254,32 @@ initialize_solver_state(const pdhg_parameters_t *params,
     CUDA_CHECK(cudaMalloc(&dest, bytes)); \
     CUDA_CHECK(cudaMemcpy(dest, src, bytes, cudaMemcpyHostToDevice));
 
+    printf("constraint_matrix_row_pointers (%d):\n", n_cons + 1);
+    for (int i = 0; i < n_cons + 1; ++i)
+    {
+     printf("%d ",
+         rescale_info->scaled_problem->constraint_matrix_row_pointers[i]);
+    }
+    printf("\nconstraint_matrix_col_indices (%d):\n",
+        rescale_info->scaled_problem->constraint_matrix_num_nonzeros);
+    for (int i = 0;
+      i < rescale_info->scaled_problem->constraint_matrix_num_nonzeros;
+      ++i)
+    {
+     printf("%d ",
+         rescale_info->scaled_problem->constraint_matrix_col_indices[i]);
+    }
+    printf("\nconstraint_matrix_values (%d):\n",
+        rescale_info->scaled_problem->constraint_matrix_num_nonzeros);
+    for (int i = 0;
+      i < rescale_info->scaled_problem->constraint_matrix_num_nonzeros;
+      ++i)
+    {
+     printf("%.6f ",
+         rescale_info->scaled_problem->constraint_matrix_values[i]);
+    }
+    printf("\n");
+
     ALLOC_AND_COPY(state->constraint_matrix->row_ptr,
                    rescale_info->scaled_problem->constraint_matrix_row_pointers,
                    (n_cons + 1) * sizeof(int));
