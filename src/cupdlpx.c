@@ -188,6 +188,8 @@ cupdlpx_result_t *solve_lp_problem(const lp_problem_t *prob,
                                    const pdhg_parameters_t *params)
 {
     // argument checks
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     if (!prob)
     {
         fprintf(stderr, "[interface] solve_lp_problem: invalid arguments.\n");

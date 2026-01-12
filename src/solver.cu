@@ -181,6 +181,8 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         state->inner_count++;
         state->total_count++;
     }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     if (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
     {
@@ -203,6 +205,8 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         pslp_postsolve(presolve_info, result, original_problem);
         cupdlpx_presolve_info_free(presolve_info);
     }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     pdhg_final_log(result, params);
     pdhg_solver_state_free(state);
