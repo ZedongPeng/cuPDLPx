@@ -279,7 +279,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
          rescale_info->scaled_problem->constraint_matrix_values[i]);
     }
     printf("\n");
-
+    CUDA_CHECK(cudaGetLastError());
     ALLOC_AND_COPY(state->constraint_matrix->row_ptr,
                    rescale_info->scaled_problem->constraint_matrix_row_pointers,
                    (n_cons + 1) * sizeof(int));
@@ -291,7 +291,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
                    rescale_info->scaled_problem->constraint_matrix_values,
                    rescale_info->scaled_problem->constraint_matrix_num_nonzeros *
                        sizeof(double));
-
+    CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaMalloc(&state->constraint_matrix_t->row_ptr,
                           (n_vars + 1) * sizeof(int)));
     CUDA_CHECK(
@@ -302,11 +302,12 @@ initialize_solver_state(const pdhg_parameters_t *params,
         cudaMalloc(&state->constraint_matrix_t->val,
                    rescale_info->scaled_problem->constraint_matrix_num_nonzeros *
                        sizeof(double)));
-
+    CUDA_CHECK(cudaGetLastError());
     CUSPARSE_CHECK(cusparseCreate(&state->sparse_handle));
     CUBLAS_CHECK(cublasCreate(&state->blas_handle));
     CUBLAS_CHECK(
         cublasSetPointerMode(state->blas_handle, CUBLAS_POINTER_MODE_HOST));
+    CUDA_CHECK(cudaGetLastError());
 
     size_t buffer_size = 0;
     void *buffer = nullptr;
@@ -318,6 +319,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         state->constraint_matrix_t->val, state->constraint_matrix_t->row_ptr,
         state->constraint_matrix_t->col_ind, CUDA_R_64F, CUSPARSE_ACTION_NUMERIC,
         CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG_DEFAULT, &buffer_size));
+    CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaMalloc(&buffer, buffer_size));
     CUDA_CHECK(cudaGetLastError());
 
