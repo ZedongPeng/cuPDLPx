@@ -97,9 +97,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                            const lp_problem_t *original_problem)
 {
     print_initial_info(params, original_problem);
-
+    CUDA_CHECK(cudaGetLastError());
     cupdlpx_presolve_info_t *presolve_info = NULL;
     const lp_problem_t *working_problem = original_problem;
+    CUDA_CHECK(cudaGetLastError());
 
     if (params->presolve)
     {
@@ -113,7 +114,9 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         }
         working_problem = presolve_info->reduced_problem;
     }
+    CUDA_CHECK(cudaGetLastError());
     rescale_info_t *rescale_info = rescale_problem(params, working_problem);
+    CUDA_CHECK(cudaGetLastError());
     pdhg_solver_state_t *state = initialize_solver_state(params, working_problem, rescale_info);
 
     rescale_info_free(rescale_info);
@@ -221,6 +224,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
                         const lp_problem_t *working_problem,
                         const rescale_info_t *rescale_info)
 {
+    CUDA_CHECK(cudaGetLastError());
     pdhg_solver_state_t *state =
         (pdhg_solver_state_t *)safe_calloc(1, sizeof(pdhg_solver_state_t));
 
@@ -249,6 +253,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     state->termination_reason = TERMINATION_REASON_UNSPECIFIED;
 
     state->rescaling_time_sec = rescale_info->rescaling_time_sec;
+    CUDA_CHECK(cudaGetLastError());
 
 #define ALLOC_AND_COPY(dest, src, bytes)  \
     CUDA_CHECK(cudaMalloc(&dest, bytes)); \
