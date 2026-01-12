@@ -136,14 +136,6 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     result->presolve_status = info->presolve_status;
     result->presolve_time = info->presolve_time;
 
-    if (info->presolver->reduced_prob->n == 0)
-    {
-        result->termination_reason = TERMINATION_REASON_OPTIMAL;
-        result->primal_objective_value = info->presolver->sol->obj;
-        pslp_postsolve(info, result, original_prob);
-        return result;
-    }
-
     if (info->presolve_status == INFEASIBLE)
     {
         result->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE;
@@ -151,6 +143,12 @@ cupdlpx_result_t *create_result_from_presolve(const cupdlpx_presolve_info_t *inf
     else if (info->presolve_status == UNBNDORINFEAS)
     {
         result->termination_reason = TERMINATION_REASON_INFEASIBLE_OR_UNBOUNDED;
+    }
+    else if (info->presolver->reduced_prob->n == 0)
+    {
+        result->termination_reason = TERMINATION_REASON_OPTIMAL;
+        pslp_postsolve(info, result, original_prob);
+        return result;
     }
     else
     {
