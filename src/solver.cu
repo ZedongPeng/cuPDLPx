@@ -319,6 +319,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         state->constraint_matrix_t->col_ind, CUDA_R_64F, CUSPARSE_ACTION_NUMERIC,
         CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG_DEFAULT, &buffer_size));
     CUDA_CHECK(cudaMalloc(&buffer, buffer_size));
+    CUDA_CHECK(cudaGetLastError());
 
     CUSPARSE_CHECK(cusparseCsr2cscEx2(
         state->sparse_handle, state->constraint_matrix->num_rows,
@@ -330,6 +331,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
         CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG_DEFAULT, buffer));
 
     CUDA_CHECK(cudaFree(buffer));
+    CUDA_CHECK(cudaGetLastError());
 
     ALLOC_AND_COPY(state->variable_lower_bound,
                    rescale_info->scaled_problem->variable_lower_bound, var_bytes);
@@ -350,6 +352,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
 
     state->constraint_bound_rescaling = rescale_info->con_bound_rescale;
     state->objective_vector_rescaling = rescale_info->obj_vec_rescale;
+    CUDA_CHECK(cudaGetLastError());
 
 #define ALLOC_ZERO(dest, bytes)           \
     CUDA_CHECK(cudaMalloc(&dest, bytes)); \
@@ -372,6 +375,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
     ALLOC_ZERO(state->primal_slack, con_bytes);
     ALLOC_ZERO(state->primal_residual, con_bytes);
     ALLOC_ZERO(state->delta_dual_solution, con_bytes);
+    CUDA_CHECK(cudaGetLastError());
 
     if (working_problem->primal_start)
     {
@@ -388,6 +392,7 @@ initialize_solver_state(const pdhg_parameters_t *params,
                               cudaMemcpyHostToDevice));
         free(rescaled);
     }
+    CUDA_CHECK(cudaGetLastError());
     if (working_problem->dual_start)
     {
         double *rescaled = (double *)safe_malloc(con_bytes);
@@ -502,6 +507,8 @@ initialize_solver_state(const pdhg_parameters_t *params,
 
     size_t primal_spmv_buffer_size;
     size_t dual_spmv_buffer_size;
+
+    CUDA_CHECK(cudaGetLastError());
 
     printf("Initializing cuSPARSE structures...\n");
     printf("num_constraints = %d\n", state->num_constraints);
