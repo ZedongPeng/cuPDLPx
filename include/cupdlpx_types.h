@@ -37,6 +37,12 @@ extern "C"
 		TERMINATION_REASON_FEAS_POLISH_SUCCESS
 	} termination_reason_t;
 
+	typedef enum
+    {
+        NORM_TYPE_L2 = 0,
+        NORM_TYPE_L_INF = 1
+    } norm_type_t;
+
 	typedef struct
 	{
 		int num_variables;
@@ -93,6 +99,7 @@ extern "C"
 		restart_parameters_t restart_params;
 		double reflection_coefficient;
 		bool feasibility_polishing;
+		norm_type_t optimality_norm;
 		bool presolve;
 	} pdhg_parameters_t;
 
@@ -115,6 +122,7 @@ extern "C"
 		double cumulative_time_sec;
 		double presolve_time;
 		int presolve_status;
+		// PresolveStats presolve_stats;
 
 		double absolute_primal_residual;
 		double relative_primal_residual;

@@ -124,6 +124,23 @@ void save_solver_summary(const cupdlpx_result_t *result, const char *output_dir,
         fprintf(outfile, "Reduced Rows: %d\n", result->num_reduced_constraints);
         fprintf(outfile, "Reduced Columns: %d\n", result->num_reduced_variables);
         fprintf(outfile, "Reduced Nonzeros: %d\n", result->num_reduced_nonzeros);
+
+        // if (result->presolve_stats.n_cols_original > 0) {
+        //     fprintf(outfile, "NNZ Removed Trivial: %d\n", result->presolve_stats.nnz_removed_trivial);
+        //     fprintf(outfile, "NNZ Removed Fast: %d\n", result->presolve_stats.nnz_removed_fast);
+        //     fprintf(outfile, "NNZ Removed Primal Propagation: %d\n", result->presolve_stats.nnz_removed_primal_propagation);
+        //     fprintf(outfile, "NNZ Removed Parallel Rows: %d\n", result->presolve_stats.nnz_removed_parallel_rows);
+        //     fprintf(outfile, "NNZ Removed Parallel Cols: %d\n", result->presolve_stats.nnz_removed_parallel_cols);
+            
+        //     fprintf(outfile, "Presolve Time Init (sec): %e\n", result->presolve_stats.time_init);
+        //     fprintf(outfile, "Presolve Time Run (sec): %e\n", result->presolve_stats.time_presolve);
+        //     fprintf(outfile, "Presolve Time Fast (sec): %e\n", result->presolve_stats.time_fast_reductions);
+        //     fprintf(outfile, "Presolve Time Medium (sec): %e\n", result->presolve_stats.time_medium_reductions);
+        //     fprintf(outfile, "Presolve Time Primal Proppagation (sec): %e\n", result->presolve_stats.time_primal_propagation);
+        //     fprintf(outfile, "Presolve Time Parallel Rows (sec): %e\n", result->presolve_stats.time_parallel_rows);
+        //     fprintf(outfile, "Presolve Time Parallel Cols (sec): %e\n", result->presolve_stats.time_parallel_cols);
+        //     fprintf(outfile, "Postsolve Time (sec): %e\n", result->presolve_stats.time_postsolve);
+        // }
     }
     if (result->feasibility_polishing_time > 0.0)
     {
@@ -184,6 +201,8 @@ void print_usage(const char *prog_name)
                     "Enable feasibility use feasibility polishing (default: false).\n");
     fprintf(stderr, "      --eps_feas_polish <tolerance>   Relative feasibility "
                     "polish tolerance (default: 1e-6).\n");
+    fprintf(stderr, "      --opt_norm <norm_type>          "
+                    "Norm for optimality criteria: l2 or linf (default: l2).\n");
     fprintf(stderr, "      --no_presolve                   "
                     "Disable presolve (default: enabled).\n");
 }
@@ -210,7 +229,8 @@ int main(int argc, char *argv[])
         {"sv_max_iter", required_argument, 0, 1011},
         {"sv_tol", required_argument, 0, 1012},
         {"eval_freq", required_argument, 0, 1013},
-        {"no_presolve", no_argument, 0, 1014},
+        {"opt_norm", required_argument, 0, 1014},
+        {"no_presolve", no_argument, 0, 1015},
         {0, 0, 0, 0}};
 
     int opt;
@@ -266,7 +286,20 @@ int main(int argc, char *argv[])
         case 1013: // --eval_freq
             params.termination_evaluation_frequency = atoi(optarg);
             break;
-        case 1014: // --no_presolve
+        case 1014: // --opt_norm
+            {
+                const char *norm_str = optarg;
+                if (strcmp(norm_str, "l2") == 0) {
+                    params.optimality_norm = NORM_TYPE_L2;
+                } else if (strcmp(norm_str, "linf") == 0) {
+                    params.optimality_norm = NORM_TYPE_L_INF;
+                } else {
+                    fprintf(stderr, "Error: opt_norm must be 'l2' or 'linf'\n");
+                    return 1;
+                }
+            }
+            break;
+        case 1015: // --no_presolve
             params.presolve = false;
             break;
         case '?': // Unknown option
