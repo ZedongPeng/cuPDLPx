@@ -275,6 +275,7 @@ void check_termination_criteria(pdhg_solver_state_t *solver_state,
         solver_state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
         return;
     }
+    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
     if (solver_state->cumulative_time_sec >= criteria->time_sec_limit)
     {
         solver_state->termination_reason = TERMINATION_REASON_TIME_LIMIT;
@@ -1124,6 +1125,7 @@ void check_feas_polishing_termination_criteria(
         solver_state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
         return;
     }
+    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
     if (solver_state->cumulative_time_sec >= criteria->time_sec_limit)
     {
         solver_state->termination_reason = TERMINATION_REASON_TIME_LIMIT;

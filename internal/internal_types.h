@@ -84,6 +84,7 @@ typedef struct
 	double *primal_slack;
 	double *dual_slack;
 	double rescaling_time_sec;
+	clock_t start_time;
 	double cumulative_time_sec;
 
 	double *primal_residual;

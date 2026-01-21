@@ -169,7 +169,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     initialize_step_size_and_primal_weight(state, params);
     sync_step_sizes_to_gpu(state);
 
-    clock_t start_time = clock();
+    state->start_time = clock();
     bool do_restart = false;
 
     cudaGraphExec_t graphExec = NULL;
@@ -215,7 +215,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 
             CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         }
-        compute_fixed_point_error(state); // TODO: move into graph?
+        compute_fixed_point_error(state);
 
         compute_residual(state, params->optimality_norm);
         state->inner_count += params->termination_evaluation_frequency;
@@ -228,8 +228,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         }
 
         // Check Termination
-        state->cumulative_time_sec =
-            (double)(clock() - start_time) / CLOCKS_PER_SEC; // TODO move this inside.
         check_termination_criteria(state, &params->termination_criteria);
         if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED)
         {
@@ -1410,7 +1408,7 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, co
 // Feasibility Polishing
 void feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_t *state)
 {
-    clock_t start_time = clock();
+    clock_t feasibility_polishing_start_time = clock();
     if (state->relative_primal_residual < params->termination_criteria.eps_feas_polish_relative &&
         state->relative_dual_residual < params->termination_criteria.eps_feas_polish_relative)
     {
@@ -1469,7 +1467,7 @@ void feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_t *st
     primal_feas_polish_state_free(primal_state);
     dual_feas_polish_state_free(dual_state);
 
-    state->feasibility_polishing_time = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    state->feasibility_polishing_time = (double)(clock() - feasibility_polishing_start_time) / CLOCKS_PER_SEC;
     return;
 }
 
@@ -1619,7 +1617,8 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
     primal_state->total_count = 0;
     primal_state->inner_count = 0;
     primal_state->termination_reason = TERMINATION_REASON_UNSPECIFIED;
-    primal_state->cumulative_time_sec = 0.0;
+    primal_state->start_time = original_state->start_time;
+    primal_state->cumulative_time_sec = original_state->cumulative_time_sec;
     primal_state->best_primal_dual_residual_gap = INFINITY;
 
     // IGNORE DUAL RESIDUAL AND OBJECTIVE GAP
@@ -1746,7 +1745,8 @@ static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     dual_state->total_count = 0;
     dual_state->inner_count = 0;
     dual_state->termination_reason = TERMINATION_REASON_UNSPECIFIED;
-    dual_state->cumulative_time_sec = 0.0;
+    dual_state->start_time = original_state->start_time;
+    dual_state->cumulative_time_sec = original_state->cumulative_time_sec;
     dual_state->best_primal_dual_residual_gap = INFINITY;
 
     // IGNORE PRIMAL RESIDUAL AND OBJECTIVE GAP
