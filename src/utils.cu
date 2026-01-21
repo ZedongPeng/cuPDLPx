@@ -529,13 +529,20 @@ int get_print_frequency(int iter)
 }
 
 __global__ void compute_residual_kernel(
-    double *primal_residual, const double *primal_product,
-    const double *constraint_lower_bound, const double *constraint_upper_bound,
-    const double *dual_solution, double *dual_residual,
-    const double *dual_product, const double *dual_slack,
-    const double *objective_vector, const double *constraint_rescaling,
-    const double *variable_rescaling, double *dual_obj_contribution,
-    const double *const_lb_finite, const double *const_ub_finite,
+    double *__restrict__ primal_residual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ constraint_lower_bound,
+    const double *__restrict__ constraint_upper_bound,
+    const double *__restrict__ dual_solution,
+    double *__restrict__ dual_residual,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ dual_slack,
+    const double *__restrict__ objective_vector,
+    const double *__restrict__ constraint_rescaling,
+    const double *__restrict__ variable_rescaling,
+    double *__restrict__ dual_obj_contribution,
+    const double *__restrict__ const_lb_finite,
+    const double *__restrict__ const_ub_finite,
     int num_constraints, int num_variables)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -563,8 +570,9 @@ __global__ void compute_residual_kernel(
 }
 
 __global__ void primal_infeasibility_project_kernel(
-    double *primal_ray_estimate, const double *variable_lower_bound,
-    const double *variable_upper_bound, int num_variables)
+    double *__restrict__ primal_ray_estimate,
+    const double *__restrict__ variable_lower_bound,
+    const double *__restrict__ variable_upper_bound, int num_variables)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < num_variables)
@@ -581,8 +589,9 @@ __global__ void primal_infeasibility_project_kernel(
 }
 
 __global__ void dual_infeasibility_project_kernel(
-    double *dual_ray_estimate, const double *constraint_lower_bound,
-    const double *constraint_upper_bound, int num_constraints)
+    double *__restrict__ dual_ray_estimate,
+    const double *__restrict__ constraint_lower_bound,
+    const double *__restrict__ constraint_upper_bound, int num_constraints)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < num_constraints)
@@ -599,9 +608,11 @@ __global__ void dual_infeasibility_project_kernel(
 }
 
 __global__ void compute_primal_infeasibility_kernel(
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int num_constraints, double *primal_infeasibility,
-    const double *constraint_rescaling)
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int num_constraints,
+    double *__restrict__ primal_infeasibility,
+    const double *__restrict__ constraint_rescaling)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < num_constraints)
@@ -615,9 +626,11 @@ __global__ void compute_primal_infeasibility_kernel(
 
 __global__ void
 compute_dual_infeasibility_kernel(const double *dual_product,
-                                  const double *var_lb, const double *var_ub,
-                                  int num_variables, double *dual_infeasibility,
-                                  const double *variable_rescaling)
+                                  const double *__restrict__ var_lb,
+                                  const double *__restrict__ var_ub,
+                                  int num_variables,
+                                  double *__restrict__ dual_infeasibility,
+                                  const double *__restrict__ variable_rescaling)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < num_variables)
@@ -630,10 +643,10 @@ compute_dual_infeasibility_kernel(const double *dual_product,
 }
 
 __global__ void dual_solution_dual_objective_contribution_kernel(
-    const double *constraint_lower_bound_finite_val,
-    const double *constraint_upper_bound_finite_val,
-    const double *dual_solution, int num_constraints,
-    double *dual_objective_dual_solution_contribution_array)
+    const double *__restrict__ constraint_lower_bound_finite_val,
+    const double *__restrict__ constraint_upper_bound_finite_val,
+    const double *__restrict__ dual_solution, int num_constraints,
+    double *__restrict__ dual_objective_dual_solution_contribution_array)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -646,10 +659,11 @@ __global__ void dual_solution_dual_objective_contribution_kernel(
 }
 
 __global__ void dual_objective_dual_slack_contribution_array_kernel(
-    const double *dual_slack,
-    double *dual_objective_dual_slack_contribution_array,
-    const double *variable_lower_bound_finite_val,
-    const double *variable_upper_bound_finite_val, int num_variables)
+    const double *__restrict__ dual_slack,
+    double *__restrict__ dual_objective_dual_slack_contribution_array,
+    const double *__restrict__ variable_lower_bound_finite_val,
+    const double *__restrict__ variable_upper_bound_finite_val,
+    int num_variables)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1199,11 +1213,11 @@ void display_feas_polish_iteration_stats(const pdhg_solver_state_t *state, bool 
 }
 
 __global__ void compute_primal_feas_polish_residual_kernel(
-    double *primal_residual,
-    const double *primal_product,
-    const double *constraint_lower_bound,
-    const double *constraint_upper_bound,
-    const double *constraint_rescaling,
+    double *__restrict__ primal_residual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ constraint_lower_bound,
+    const double *__restrict__ constraint_upper_bound,
+    const double *__restrict__ constraint_rescaling,
     int num_constraints)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1217,15 +1231,15 @@ __global__ void compute_primal_feas_polish_residual_kernel(
 }
 
 __global__ void compute_dual_feas_polish_residual_kernel(
-    double *dual_residual,
-    const double *dual_solution,
-    const double *dual_product,
-    const double *dual_slack,
-    const double *objective_vector,
-    const double *variable_rescaling,
-    double *dual_obj_contribution,
-    const double *const_lb_finite,
-    const double *const_ub_finite,
+    double *__restrict__ dual_residual,
+    const double *__restrict__ dual_solution,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ dual_slack,
+    const double *__restrict__ objective_vector,
+    const double *__restrict__ variable_rescaling,
+    double *__restrict__ dual_obj_contribution,
+    const double *__restrict__ const_lb_finite,
+    const double *__restrict__ const_ub_finite,
     int num_variables,
     int num_constraints)
 {

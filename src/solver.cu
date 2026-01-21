@@ -29,28 +29,43 @@ limitations under the License.
 #include <time.h>
 
 __global__ void compute_next_pdhg_primal_solution_kernel(
-    const double *current_primal, double *reflected_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size);
+    const double *__restrict__ current_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective, const double *__restrict__ var_lb,
+    const double *__restrict__ var_ub, int n,
+    const double *__restrict__ d_step_size);
 __global__ void compute_next_pdhg_primal_solution_major_kernel(
-    const double *current_primal, double *pdhg_primal, double *reflected_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size, double *dual_slack);
+    const double *__restrict__ current_primal,
+    double *__restrict__ pdhg_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective, const double *__restrict__ var_lb,
+    const double *__restrict__ var_ub, int n,
+    const double *__restrict__ d_step_size, double *__restrict__ dual_slack);
 __global__ void compute_next_pdhg_dual_solution_kernel(
-    const double *current_dual, double *reflected_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size);
+    const double *__restrict__ current_dual,
+    double *__restrict__ reflected_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size);
 __global__ void compute_next_pdhg_dual_solution_major_kernel(
-    const double *current_dual, double *pdhg_dual, double *reflected_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size);
+    const double *__restrict__ current_dual,
+    double *__restrict__ pdhg_dual, double *__restrict__ reflected_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size);
 __global__ void
-halpern_update_kernel(const double *initial_primal, double *current_primal,
-                      const double *reflected_primal,
-                      const double *initial_dual, double *current_dual,
-                      const double *reflected_dual, int n_vars, int n_cons,
-                      const int *d_base_count, int k_offset,
-                      double reflection_coeff);
+halpern_update_kernel(const double *__restrict__ initial_primal,
+                      double *__restrict__ current_primal,
+                      const double *__restrict__ reflected_primal,
+                      const double *__restrict__ initial_dual,
+                      double *__restrict__ current_dual,
+                      const double *__restrict__ reflected_dual, int n_vars,
+                      int n_cons, const int *__restrict__ d_base_count,
+                      int k_offset, double reflection_coeff);
 __global__ void build_row_ind(const int *__restrict__ row_ptr,
                               int num_rows,
                               int *__restrict__ row_ind);
@@ -65,17 +80,19 @@ __global__ void fill_finite_bounds_kernel(const double *__restrict__ lower_bound
                                           double *__restrict__ lower_bound_finite_val,
                                           double *__restrict__ upper_bound_finite_val,
                                           int num_elements);
-__global__ void rescale_solution_kernel(double *primal_solution,
-                                        double *dual_solution,
-                                        const double *variable_rescaling,
-                                        const double *constraint_rescaling,
+__global__ void rescale_solution_kernel(double *__restrict__ primal_solution,
+                                        double *__restrict__ dual_solution,
+                                        const double *__restrict__ variable_rescaling,
+                                        const double *__restrict__ constraint_rescaling,
                                         const double objective_vector_rescaling,
                                         const double constraint_bound_rescaling,
                                         int n_vars, int n_cons);
 __global__ void compute_delta_solution_kernel(
-    const double *initial_primal, const double *pdhg_primal,
-    double *delta_primal, const double *initial_dual, const double *pdhg_dual,
-    double *delta_dual, int n_vars, int n_cons);
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ pdhg_primal, double *__restrict__ delta_primal,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ pdhg_dual, double *__restrict__ delta_dual,
+    int n_vars, int n_cons);
 static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major);
 static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major);
 static void halpern_update(pdhg_solver_state_t *state,
@@ -104,25 +121,45 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
 static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     const pdhg_solver_state_t *original_state);
 __global__ void compute_next_primal_solution_kernel(
-    double *current_primal, double *reflected_primal, const double *initial_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff);
+    double *__restrict__ current_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff);
 __global__ void compute_next_primal_solution_major_kernel(
-    double *current_primal, double *pdhg_primal, double *reflected_primal, const double *initial_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size, double *dual_slack,
-    const int *d_base_count, int k_offset, double reflection_coeff);
+    double *__restrict__ current_primal, double *__restrict__ pdhg_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size,
+    double *__restrict__ dual_slack,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff);
 __global__ void compute_next_dual_solution_kernel(
-    double *current_dual, const double *initial_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff);
+    double *__restrict__ current_dual,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff);
 __global__ void compute_next_dual_solution_major_kernel(
-    double *current_dual, double *pdhg_dual, double *reflected_dual, const double *initial_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff);
+    double *__restrict__ current_dual, double *__restrict__ pdhg_dual,
+    double *__restrict__ reflected_dual,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff);
 static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k_offset, const double reflection_coefficient, bool is_major);
 static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_offset, const double reflection_coefficient, bool is_major);
 
@@ -284,10 +321,10 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
 }
 
 __global__ void compute_and_rescale_reduced_cost_kernel(
-    double *reduced_cost,
-    const double *objective,
-    const double *dual_product,
-    const double *variable_rescaling,
+    double *__restrict__ reduced_cost,
+    const double *__restrict__ objective,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ variable_rescaling,
     const double objective_vector_rescaling,
     const double constraint_bound_rescaling,
     int n_vars)
@@ -681,10 +718,15 @@ __global__ void fill_finite_bounds_kernel(
 }
 
 __global__ void compute_next_primal_solution_kernel(
-    double *current_primal, double *reflected_primal, const double *initial_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff)
+    double *__restrict__ current_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -704,10 +746,16 @@ __global__ void compute_next_primal_solution_kernel(
 }
 
 __global__ void compute_next_primal_solution_major_kernel(
-    double *current_primal, double *pdhg_primal, double *reflected_primal, const double *initial_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size, double *dual_slack,
-    const int *d_base_count, int k_offset, double reflection_coeff)
+    double *__restrict__ current_primal, double *__restrict__ pdhg_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size,
+    double *__restrict__ dual_slack,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -727,9 +775,12 @@ __global__ void compute_next_primal_solution_major_kernel(
 }
 
 __global__ void compute_next_pdhg_primal_solution_kernel(
-    const double *current_primal, double *reflected_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size)
+    const double *__restrict__ current_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -743,9 +794,14 @@ __global__ void compute_next_pdhg_primal_solution_kernel(
 }
 
 __global__ void compute_next_pdhg_primal_solution_major_kernel(
-    const double *current_primal, double *pdhg_primal, double *reflected_primal,
-    const double *dual_product, const double *objective, const double *var_lb,
-    const double *var_ub, int n, const double *d_step_size, double *dual_slack)
+    const double *__restrict__ current_primal,
+    double *__restrict__ pdhg_primal,
+    double *__restrict__ reflected_primal,
+    const double *__restrict__ dual_product,
+    const double *__restrict__ objective,
+    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
+    int n, const double *__restrict__ d_step_size,
+    double *__restrict__ dual_slack)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -760,10 +816,14 @@ __global__ void compute_next_pdhg_primal_solution_major_kernel(
 }
 
 __global__ void compute_next_dual_solution_kernel(
-    double *current_dual, const double *initial_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff)
+    double *__restrict__ current_dual,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -780,10 +840,15 @@ __global__ void compute_next_dual_solution_kernel(
 }
 
 __global__ void compute_next_dual_solution_major_kernel(
-    double *current_dual, double *pdhg_dual, double *reflected_dual, const double *initial_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size,
-    const int *d_base_count, int k_offset, double reflection_coeff)
+    double *__restrict__ current_dual, double *__restrict__ pdhg_dual,
+    double *__restrict__ reflected_dual,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size,
+    const int *__restrict__ d_base_count, int k_offset,
+    double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -802,9 +867,12 @@ __global__ void compute_next_dual_solution_major_kernel(
 }
 
 __global__ void compute_next_pdhg_dual_solution_kernel(
-    const double *current_dual, double *reflected_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size)
+    const double *__restrict__ current_dual,
+    double *__restrict__ reflected_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -817,9 +885,12 @@ __global__ void compute_next_pdhg_dual_solution_kernel(
 }
 
 __global__ void compute_next_pdhg_dual_solution_major_kernel(
-    const double *current_dual, double *pdhg_dual, double *reflected_dual,
-    const double *primal_product, const double *const_lb,
-    const double *const_ub, int n, const double *d_step_size)
+    const double *__restrict__ current_dual, double *__restrict__ pdhg_dual,
+    double *__restrict__ reflected_dual,
+    const double *__restrict__ primal_product,
+    const double *__restrict__ const_lb,
+    const double *__restrict__ const_ub, int n,
+    const double *__restrict__ d_step_size)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     double step_size = *d_step_size;
@@ -833,12 +904,14 @@ __global__ void compute_next_pdhg_dual_solution_major_kernel(
 }
 
 __global__ void
-halpern_update_kernel(const double *initial_primal, double *current_primal,
-                      const double *reflected_primal,
-                      const double *initial_dual, double *current_dual,
-                      const double *reflected_dual, int n_vars, int n_cons,
-                      const int *d_base_count, int k_offset,
-                      double reflection_coeff)
+halpern_update_kernel(const double *__restrict__ initial_primal,
+                      double *__restrict__ current_primal,
+                      const double *__restrict__ reflected_primal,
+                      const double *__restrict__ initial_dual,
+                      double *__restrict__ current_dual,
+                      const double *__restrict__ reflected_dual, int n_vars,
+                      int n_cons, const int *__restrict__ d_base_count,
+                      int k_offset, double reflection_coeff)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int current_k = *d_base_count + k_offset;
@@ -858,10 +931,10 @@ halpern_update_kernel(const double *initial_primal, double *current_primal,
     }
 }
 
-__global__ void rescale_solution_kernel(double *primal_solution,
-                                        double *dual_solution,
-                                        const double *variable_rescaling,
-                                        const double *constraint_rescaling,
+__global__ void rescale_solution_kernel(double *__restrict__ primal_solution,
+                                        double *__restrict__ dual_solution,
+                                        const double *__restrict__ variable_rescaling,
+                                        const double *__restrict__ constraint_rescaling,
                                         const double objective_vector_rescaling,
                                         const double constraint_bound_rescaling,
                                         int n_vars, int n_cons)
@@ -881,9 +954,11 @@ __global__ void rescale_solution_kernel(double *primal_solution,
 }
 
 __global__ void compute_delta_solution_kernel(
-    const double *initial_primal, const double *pdhg_primal,
-    double *delta_primal, const double *initial_dual, const double *pdhg_dual,
-    double *delta_dual, int n_vars, int n_cons)
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ pdhg_primal, double *__restrict__ delta_primal,
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ pdhg_dual, double *__restrict__ delta_dual,
+    int n_vars, int n_cons)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_vars)
@@ -1815,8 +1890,9 @@ static void perform_dual_restart(pdhg_solver_state_t *state)
 }
 
 __global__ void compute_delta_primal_solution_kernel(
-    const double *initial_primal, const double *pdhg_primal, double *delta_primal,
-    int n_vars)
+    const double *__restrict__ initial_primal,
+    const double *__restrict__ pdhg_primal,
+    double *__restrict__ delta_primal, int n_vars)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_vars)
@@ -1826,8 +1902,9 @@ __global__ void compute_delta_primal_solution_kernel(
 }
 
 __global__ void compute_delta_dual_solution_kernel(
-    const double *initial_dual, const double *pdhg_dual, double *delta_dual,
-    int n_cons)
+    const double *__restrict__ initial_dual,
+    const double *__restrict__ pdhg_dual,
+    double *__restrict__ delta_dual, int n_cons)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_cons)
