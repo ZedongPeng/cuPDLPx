@@ -1173,10 +1173,10 @@ void pdhg_feas_polish_final_log(const pdhg_solver_state_t *primal_state, const p
     }
     printf("Feasibility Polishing Summary\n");
     printf("  Primal Status        : %s\n", termination_reason_to_string(primal_state->termination_reason));
-    printf("  Primal Iterations    : %d\n", primal_state->total_count - 1);
+    printf("  Primal Iterations    : %d\n", primal_state->total_count);
     printf("  Primal Time Usage    : %.3g sec\n", primal_state->cumulative_time_sec);
     printf("  Dual Status          : %s\n", termination_reason_to_string(dual_state->termination_reason));
-    printf("  Dual Iterations      : %d\n", dual_state->total_count - 1);
+    printf("  Dual Iterations      : %d\n", dual_state->total_count);
     printf("  Dual Time Usage      : %.3g sec\n", dual_state->cumulative_time_sec);
     printf("  Primal Residual      : %.3e\n", primal_state->relative_primal_residual);
     printf("  Dual Residual        : %.3e\n", dual_state->relative_dual_residual);

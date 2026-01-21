@@ -28,44 +28,6 @@ limitations under the License.
 #include <stdio.h>
 #include <time.h>
 
-__global__ void compute_next_pdhg_primal_solution_kernel(
-    const double *__restrict__ current_primal,
-    double *__restrict__ reflected_primal,
-    const double *__restrict__ dual_product,
-    const double *__restrict__ objective, const double *__restrict__ var_lb,
-    const double *__restrict__ var_ub, int n,
-    const double *__restrict__ d_step_size);
-__global__ void compute_next_pdhg_primal_solution_major_kernel(
-    const double *__restrict__ current_primal,
-    double *__restrict__ pdhg_primal,
-    double *__restrict__ reflected_primal,
-    const double *__restrict__ dual_product,
-    const double *__restrict__ objective, const double *__restrict__ var_lb,
-    const double *__restrict__ var_ub, int n,
-    const double *__restrict__ d_step_size, double *__restrict__ dual_slack);
-__global__ void compute_next_pdhg_dual_solution_kernel(
-    const double *__restrict__ current_dual,
-    double *__restrict__ reflected_dual,
-    const double *__restrict__ primal_product,
-    const double *__restrict__ const_lb,
-    const double *__restrict__ const_ub, int n,
-    const double *__restrict__ d_step_size);
-__global__ void compute_next_pdhg_dual_solution_major_kernel(
-    const double *__restrict__ current_dual,
-    double *__restrict__ pdhg_dual, double *__restrict__ reflected_dual,
-    const double *__restrict__ primal_product,
-    const double *__restrict__ const_lb,
-    const double *__restrict__ const_ub, int n,
-    const double *__restrict__ d_step_size);
-__global__ void
-halpern_update_kernel(const double *__restrict__ initial_primal,
-                      double *__restrict__ current_primal,
-                      const double *__restrict__ reflected_primal,
-                      const double *__restrict__ initial_dual,
-                      double *__restrict__ current_dual,
-                      const double *__restrict__ reflected_dual, int n_vars,
-                      int n_cons, const int *__restrict__ d_base_count,
-                      int k_offset, double reflection_coeff);
 __global__ void build_row_ind(const int *__restrict__ row_ptr,
                               int num_rows,
                               int *__restrict__ row_ind);
@@ -93,11 +55,6 @@ __global__ void compute_delta_solution_kernel(
     const double *__restrict__ initial_dual,
     const double *__restrict__ pdhg_dual, double *__restrict__ delta_dual,
     int n_vars, int n_cons);
-static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major);
-static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major);
-static void halpern_update(pdhg_solver_state_t *state,
-                           double reflection_coefficient,
-                           int k_offset);
 static void rescale_solution(pdhg_solver_state_t *state);
 static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, const lp_problem_t *original_problem);
 static void perform_restart(pdhg_solver_state_t *state, const pdhg_parameters_t *params);
@@ -215,7 +172,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     while (state->total_count < params->termination_criteria.iteration_limit)
     {
         sync_inner_count_to_gpu(state);
-
         compute_next_primal_solution(state, 1, params->reflection_coefficient, true);
         compute_next_dual_solution(state, 1, params->reflection_coefficient, true);
 
@@ -226,7 +182,7 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             do_restart = false;
         }
 
-        if (params->termination_evaluation_frequency > 3)
+        if (params->termination_evaluation_frequency > 3)// TODO: remove this
         {
             if (!graph_created)
             {
@@ -249,7 +205,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                 CUDA_CHECK(cudaGraphDestroy(graph));
                 graph_created = true;
             }
-
             CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         }
         compute_fixed_point_error(state);
@@ -774,47 +729,6 @@ __global__ void compute_next_primal_solution_major_kernel(
     }
 }
 
-__global__ void compute_next_pdhg_primal_solution_kernel(
-    const double *__restrict__ current_primal,
-    double *__restrict__ reflected_primal,
-    const double *__restrict__ dual_product,
-    const double *__restrict__ objective,
-    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
-    int n, const double *__restrict__ d_step_size)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    double step_size = *d_step_size;
-    if (i < n)
-    {
-        double temp =
-            current_primal[i] - step_size * (objective[i] - dual_product[i]);
-        double temp_proj = fmax(var_lb[i], fmin(temp, var_ub[i]));
-        reflected_primal[i] = 2.0 * temp_proj - current_primal[i];
-    }
-}
-
-__global__ void compute_next_pdhg_primal_solution_major_kernel(
-    const double *__restrict__ current_primal,
-    double *__restrict__ pdhg_primal,
-    double *__restrict__ reflected_primal,
-    const double *__restrict__ dual_product,
-    const double *__restrict__ objective,
-    const double *__restrict__ var_lb, const double *__restrict__ var_ub,
-    int n, const double *__restrict__ d_step_size,
-    double *__restrict__ dual_slack)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    double step_size = *d_step_size;
-    if (i < n)
-    {
-        double temp =
-            current_primal[i] - step_size * (objective[i] - dual_product[i]);
-        pdhg_primal[i] = fmax(var_lb[i], fmin(temp, var_ub[i]));
-        dual_slack[i] = (pdhg_primal[i] - temp) / step_size;
-        reflected_primal[i] = 2.0 * pdhg_primal[i] - current_primal[i];
-    }
-}
-
 __global__ void compute_next_dual_solution_kernel(
     double *__restrict__ current_dual,
     const double *__restrict__ initial_dual,
@@ -866,70 +780,6 @@ __global__ void compute_next_dual_solution_major_kernel(
     }
 }
 
-__global__ void compute_next_pdhg_dual_solution_kernel(
-    const double *__restrict__ current_dual,
-    double *__restrict__ reflected_dual,
-    const double *__restrict__ primal_product,
-    const double *__restrict__ const_lb,
-    const double *__restrict__ const_ub, int n,
-    const double *__restrict__ d_step_size)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    double step_size = *d_step_size;
-    if (i < n)
-    {
-        double temp = current_dual[i] / step_size - primal_product[i];
-        double temp_proj = fmax(-const_ub[i], fmin(temp, -const_lb[i]));
-        reflected_dual[i] = 2.0 * (temp - temp_proj) * step_size - current_dual[i];
-    }
-}
-
-__global__ void compute_next_pdhg_dual_solution_major_kernel(
-    const double *__restrict__ current_dual, double *__restrict__ pdhg_dual,
-    double *__restrict__ reflected_dual,
-    const double *__restrict__ primal_product,
-    const double *__restrict__ const_lb,
-    const double *__restrict__ const_ub, int n,
-    const double *__restrict__ d_step_size)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    double step_size = *d_step_size;
-    if (i < n)
-    {
-        double temp = current_dual[i] / step_size - primal_product[i];
-        double temp_proj = fmax(-const_ub[i], fmin(temp, -const_lb[i]));
-        pdhg_dual[i] = (temp - temp_proj) * step_size;
-        reflected_dual[i] = 2.0 * pdhg_dual[i] - current_dual[i];
-    }
-}
-
-__global__ void
-halpern_update_kernel(const double *__restrict__ initial_primal,
-                      double *__restrict__ current_primal,
-                      const double *__restrict__ reflected_primal,
-                      const double *__restrict__ initial_dual,
-                      double *__restrict__ current_dual,
-                      const double *__restrict__ reflected_dual, int n_vars,
-                      int n_cons, const int *__restrict__ d_base_count,
-                      int k_offset, double reflection_coeff)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int current_k = *d_base_count + k_offset;
-    double weight = (double)(current_k) / (double)(current_k + 1);
-    if (i < n_vars)
-    {
-        double reflected = reflection_coeff * reflected_primal[i] +
-                           (1.0 - reflection_coeff) * current_primal[i];
-        current_primal[i] = weight * reflected + (1.0 - weight) * initial_primal[i];
-    }
-    else if (i < n_vars + n_cons)
-    {
-        int idx = i - n_vars;
-        double reflected = reflection_coeff * reflected_dual[idx] +
-                           (1.0 - reflection_coeff) * current_dual[idx];
-        current_dual[idx] = weight * reflected + (1.0 - weight) * initial_dual[idx];
-    }
-}
 
 __global__ void rescale_solution_kernel(double *__restrict__ primal_solution,
                                         double *__restrict__ dual_solution,
@@ -986,8 +836,6 @@ static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k
 
     double step = state->step_size / state->primal_weight;
 
-    // if (state->is_this_major_iteration ||
-    //     ((state->total_count + 1) % get_print_frequency(state->total_count + 1)) == 0)
     if (is_major)
     {
         compute_next_primal_solution_major_kernel<<<state->num_blocks_primal,
@@ -1008,43 +856,6 @@ static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k
             state->num_variables, state->d_primal_step_size,
             state->d_inner_count, k_offset, reflection_coefficient
         );
-    }
-}
-
-static void compute_next_pdhg_primal_solution(pdhg_solver_state_t *state, bool is_major)
-{
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol,
-                                          state->current_dual_solution));
-    CUSPARSE_CHECK(
-        cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    CUSPARSE_CHECK(cusparseSpMV(
-        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
-        state->matAt, state->vec_dual_sol, &HOST_ZERO, state->vec_dual_prod,
-        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->dual_spmv_buffer));
-
-    double step = state->step_size / state->primal_weight;
-
-    // if (state->is_this_major_iteration ||
-    //     ((state->total_count + 1) % get_print_frequency(state->total_count + 1)) == 0)
-    if (is_major)
-    {
-        compute_next_pdhg_primal_solution_major_kernel<<<state->num_blocks_primal,
-                                                         THREADS_PER_BLOCK, 0, state->stream>>>(
-            state->current_primal_solution, state->pdhg_primal_solution,
-            state->reflected_primal_solution, state->dual_product,
-            state->objective_vector, state->variable_lower_bound,
-            state->variable_upper_bound, state->num_variables, state->d_primal_step_size,
-            state->dual_slack);
-    }
-    else
-    {
-        compute_next_pdhg_primal_solution_kernel<<<state->num_blocks_primal,
-                                                   THREADS_PER_BLOCK, 0, state->stream>>>(
-            state->current_primal_solution, state->reflected_primal_solution,
-            state->dual_product, state->objective_vector,
-            state->variable_lower_bound, state->variable_upper_bound,
-            state->num_variables, state->d_primal_step_size);
     }
 }
 
@@ -1082,53 +893,6 @@ static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_of
             state->constraint_upper_bound, state->num_constraints, state->d_dual_step_size,
             state->d_inner_count, k_offset, reflection_coefficient);
     }
-}
-
-static void compute_next_pdhg_dual_solution(pdhg_solver_state_t *state, bool is_major)
-{
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol,
-                                          state->reflected_primal_solution));
-    CUSPARSE_CHECK(
-        cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-
-    CUSPARSE_CHECK(cusparseSpMV(
-        state->sparse_handle, CUSPARSE_OPERATION_NON_TRANSPOSE, &HOST_ONE,
-        state->matA, state->vec_primal_sol, &HOST_ZERO, state->vec_primal_prod,
-        CUDA_R_64F, CUSPARSE_SPMV_CSR_ALG2, state->primal_spmv_buffer));
-
-    double step = state->step_size * state->primal_weight;
-
-    if (is_major)
-    {
-        compute_next_pdhg_dual_solution_major_kernel<<<state->num_blocks_dual,
-                                                       THREADS_PER_BLOCK, 0, state->stream>>>(
-            state->current_dual_solution, state->pdhg_dual_solution,
-            state->reflected_dual_solution, state->primal_product,
-            state->constraint_lower_bound, state->constraint_upper_bound,
-            state->num_constraints, state->d_dual_step_size);
-    }
-    else
-    {
-        compute_next_pdhg_dual_solution_kernel<<<state->num_blocks_dual,
-                                                 THREADS_PER_BLOCK, 0, state->stream>>>(
-            state->current_dual_solution, state->reflected_dual_solution,
-            state->primal_product, state->constraint_lower_bound,
-            state->constraint_upper_bound, state->num_constraints, state->d_dual_step_size);
-    }
-}
-
-static void halpern_update(pdhg_solver_state_t *state,
-                           double reflection_coefficient,
-                           int k_offset)
-{
-    double weight = (double)(state->inner_count) / (state->inner_count + 1);
-    halpern_update_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
-        state->initial_primal_solution, state->current_primal_solution,
-        state->reflected_primal_solution, state->initial_dual_solution,
-        state->current_dual_solution, state->reflected_dual_solution,
-        state->num_variables, state->num_constraints,
-        state->d_inner_count, k_offset,
-        reflection_coefficient);
 }
 
 static void rescale_solution(pdhg_solver_state_t *state)
@@ -1549,45 +1313,70 @@ void feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_t *st
 void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_t *state, const pdhg_solver_state_t *ori_state)
 {
     print_initial_feas_polish_info(true, params);
-    clock_t start_time = clock();
     bool do_restart = false;
+    cudaGraphExec_t graphExec = NULL;
+    bool graph_created = false;
+
     while (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
     {
-        if ((state->is_this_major_iteration || state->total_count == 0) || (state->total_count % get_print_frequency(state->total_count) == 0))
-        {
-            compute_primal_feas_polish_residual(state, ori_state, params->optimality_norm);
+        sync_inner_count_to_gpu(state);
+        compute_next_primal_solution(state, 1, params->reflection_coefficient, true);
+        compute_next_dual_solution(state, 1, params->reflection_coefficient, true);
 
-            state->cumulative_time_sec = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-
-            check_feas_polishing_termination_criteria(state, &params->termination_criteria, true);
-            display_feas_polish_iteration_stats(state, params->verbose, true);
-        }
-
-        if ((state->is_this_major_iteration || state->total_count == 0))
-        {
-            do_restart = should_do_adaptive_restart(state, &params->restart_params, params->termination_evaluation_frequency);
-            if (do_restart)
-                perform_primal_restart(state);
-        }
-
-        state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
-
-        compute_next_pdhg_primal_solution(state, true); // TODO
-        compute_next_pdhg_dual_solution(state, true);   // TODO
-
-        if (state->is_this_major_iteration || do_restart)
+        if (do_restart)
         {
             compute_primal_fixed_point_error(state);
-            if (do_restart)
-            {
-                state->initial_fixed_point_error = state->fixed_point_error;
-                do_restart = false;
-            }
+            state->initial_fixed_point_error = state->fixed_point_error;
+            do_restart = false;
         }
-        halpern_update(state, params->reflection_coefficient, 0); // TODO
 
-        state->inner_count++;
-        state->total_count++;
+        if (!graph_created)
+        {
+            // Start CUDA graph capture
+            cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
+
+            for (int i = 2; i <= params->termination_evaluation_frequency - 1; i++)
+            {
+                compute_next_primal_solution(state, i, params->reflection_coefficient, false);
+                compute_next_dual_solution(state, i, params->reflection_coefficient, false);
+            }
+
+            compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            // end CUDA graph capture
+
+            cudaGraph_t graph;
+            CUDA_CHECK(cudaStreamEndCapture(state->stream, &graph));
+            CUDA_CHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+            CUDA_CHECK(cudaGraphDestroy(graph));
+            graph_created = true;
+        }
+        CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
+
+        compute_primal_fixed_point_error(state);
+        compute_primal_feas_polish_residual(state, ori_state, params->optimality_norm);
+        state->inner_count += params->termination_evaluation_frequency;
+        state->total_count += params->termination_evaluation_frequency;
+
+        check_feas_polishing_termination_criteria(state, &params->termination_criteria, true);
+        if (state->total_count % get_print_frequency(state->total_count) == 0)
+        {
+            display_feas_polish_iteration_stats(state, params->verbose, true);
+        }
+        
+        // Check Adaptive Restart
+        do_restart = should_do_adaptive_restart(state, &params->restart_params,
+                                                params->termination_evaluation_frequency);
+        if (do_restart)
+        {
+            perform_primal_restart(state);
+            // sync_step_sizes_to_gpu(state);
+        }
+    }
+
+    if (graphExec)
+    {
+        CUDA_CHECK(cudaGraphExecDestroy(graphExec));
     }
     return;
 }
@@ -1595,45 +1384,70 @@ void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_stat
 void dual_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_t *state, const pdhg_solver_state_t *ori_state)
 {
     print_initial_feas_polish_info(false, params);
-    clock_t start_time = clock();
     bool do_restart = false;
+    cudaGraphExec_t graphExec = NULL;
+    bool graph_created = false;
+
     while (state->termination_reason == TERMINATION_REASON_UNSPECIFIED)
     {
-        if ((state->is_this_major_iteration || state->total_count == 0) || (state->total_count % get_print_frequency(state->total_count) == 0))
-        {
-            compute_dual_feas_polish_residual(state, ori_state, params->optimality_norm);
+        sync_inner_count_to_gpu(state);
+        compute_next_primal_solution(state, 1, params->reflection_coefficient, true);
+        compute_next_dual_solution(state, 1, params->reflection_coefficient, true);
 
-            state->cumulative_time_sec = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-
-            check_feas_polishing_termination_criteria(state, &params->termination_criteria, false);
-            display_feas_polish_iteration_stats(state, params->verbose, false);
-        }
-
-        if ((state->is_this_major_iteration || state->total_count == 0))
-        {
-            do_restart = should_do_adaptive_restart(state, &params->restart_params, params->termination_evaluation_frequency);
-            if (do_restart)
-                perform_dual_restart(state);
-        }
-
-        state->is_this_major_iteration = ((state->total_count + 1) % params->termination_evaluation_frequency) == 0;
-
-        compute_next_pdhg_primal_solution(state, true); // TODO
-        compute_next_pdhg_dual_solution(state, true);   // TODO
-
-        if (state->is_this_major_iteration || do_restart)
+        if (do_restart)
         {
             compute_dual_fixed_point_error(state);
-            if (do_restart)
-            {
-                state->initial_fixed_point_error = state->fixed_point_error;
-                do_restart = false;
-            }
+            state->initial_fixed_point_error = state->fixed_point_error;
+            do_restart = false;
         }
-        halpern_update(state, params->reflection_coefficient, 0); // TODO
 
-        state->inner_count++;
-        state->total_count++;
+        if (!graph_created)
+        {
+            // Start CUDA graph capture
+            cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
+
+            for (int i = 2; i <= params->termination_evaluation_frequency - 1; i++)
+            {
+                compute_next_primal_solution(state, i, params->reflection_coefficient, false);
+                compute_next_dual_solution(state, i, params->reflection_coefficient, false);
+            }
+
+            compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            // end CUDA graph capture
+
+            cudaGraph_t graph;
+            CUDA_CHECK(cudaStreamEndCapture(state->stream, &graph));
+            CUDA_CHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+            CUDA_CHECK(cudaGraphDestroy(graph));
+            graph_created = true;
+        }
+        CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
+
+        compute_dual_fixed_point_error(state);
+        compute_dual_feas_polish_residual(state, ori_state, params->optimality_norm);
+        state->inner_count += params->termination_evaluation_frequency;
+        state->total_count += params->termination_evaluation_frequency;
+
+        check_feas_polishing_termination_criteria(state, &params->termination_criteria, false);
+        if (state->total_count % get_print_frequency(state->total_count) == 0)
+        {
+            display_feas_polish_iteration_stats(state, params->verbose, false);
+        }
+        
+        // Check Adaptive Restart
+        do_restart = should_do_adaptive_restart(state, &params->restart_params,
+                                                params->termination_evaluation_frequency);
+        if (do_restart)
+        {
+            perform_dual_restart(state);
+            // sync_step_sizes_to_gpu(state);
+        }
+    }
+
+    if (graphExec)
+    {
+        CUDA_CHECK(cudaGraphExecDestroy(graphExec));
     }
     return;
 }
@@ -1916,7 +1730,7 @@ __global__ void compute_delta_dual_solution_kernel(
 static void compute_primal_fixed_point_error(pdhg_solver_state_t *state)
 {
     compute_delta_primal_solution_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK, 0, state->stream>>>(
-        state->current_primal_solution,
+        state->pdhg_primal_solution,
         state->reflected_primal_solution,
         state->delta_primal_solution,
         state->num_variables);
@@ -1932,7 +1746,7 @@ static void compute_primal_fixed_point_error(pdhg_solver_state_t *state)
 static void compute_dual_fixed_point_error(pdhg_solver_state_t *state)
 {
     compute_delta_dual_solution_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
-        state->current_dual_solution,
+        state->pdhg_dual_solution,
         state->reflected_dual_solution,
         state->delta_dual_solution,
         state->num_constraints);
