@@ -33,7 +33,10 @@ else()
 endif()
 
 # Global Compile flags (corresponding to CFLAGS/NVCCFLAGS)
-add_compile_options(-fPIC -O3 -Wall -Wextra -g)
+add_compile_options(-O3 -Wall -Wextra -g)
+if (NOT WIN32)
+  add_compile_options(-fPIC)
+endif()
 
 # Windows compatibility
 if (WIN32)
