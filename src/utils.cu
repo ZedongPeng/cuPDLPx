@@ -253,6 +253,7 @@ bool dual_infeasibility_criteria_met(const pdhg_solver_state_t *state,
 void check_termination_criteria(pdhg_solver_state_t *solver_state,
                                 const termination_criteria_t *criteria)
 {
+    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
     if (optimality_criteria_met(solver_state, criteria->eps_optimal_relative,
                                 criteria->eps_feasible_relative))
     {
@@ -275,7 +276,6 @@ void check_termination_criteria(pdhg_solver_state_t *solver_state,
         solver_state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
         return;
     }
-    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
     if (solver_state->cumulative_time_sec >= criteria->time_sec_limit)
     {
         solver_state->termination_reason = TERMINATION_REASON_TIME_LIMIT;
@@ -1115,9 +1115,11 @@ int coo_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
 
 void check_feas_polishing_termination_criteria(
     pdhg_solver_state_t *solver_state,
+    const pdhg_solver_state_t *ori_solver_state,
     const termination_criteria_t *criteria,
     bool is_primal_polish)
 {
+    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
     if (is_primal_polish)
     {
         if (solver_state->relative_primal_residual <= criteria->eps_feas_polish_relative)
@@ -1139,8 +1141,8 @@ void check_feas_polishing_termination_criteria(
         solver_state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
         return;
     }
-    solver_state->cumulative_time_sec = (double)(clock() - solver_state->start_time) / CLOCKS_PER_SEC;
-    if (solver_state->cumulative_time_sec >= criteria->time_sec_limit)
+    double total_time_sec = (double)(clock() - ori_solver_state->start_time) / CLOCKS_PER_SEC;
+    if (total_time_sec >= criteria->time_sec_limit)
     {
         solver_state->termination_reason = TERMINATION_REASON_TIME_LIMIT;
         return;

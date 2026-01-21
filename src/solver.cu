@@ -219,17 +219,17 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             compute_infeasibility_information(state);
         }
 
+        // Logging
+        if (state->total_count % get_print_frequency(state->total_count) == 0)
+        {
+            display_iteration_stats(state, params->verbose);
+        }
+
         // Check Termination
         check_termination_criteria(state, &params->termination_criteria);
         if (state->termination_reason != TERMINATION_REASON_UNSPECIFIED)
         {
             break;
-        }
-
-        // Logging
-        if (state->total_count % get_print_frequency(state->total_count) == 0)
-        {
-            display_iteration_stats(state, params->verbose);
         }
 
         // Check Adaptive Restart
@@ -1358,7 +1358,7 @@ void primal_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_stat
         state->inner_count += params->termination_evaluation_frequency;
         state->total_count += params->termination_evaluation_frequency;
 
-        check_feas_polishing_termination_criteria(state, &params->termination_criteria, true);
+        check_feas_polishing_termination_criteria(state, ori_state, &params->termination_criteria, true);
         if (state->total_count % get_print_frequency(state->total_count) == 0)
         {
             display_feas_polish_iteration_stats(state, params->verbose, true);
@@ -1429,7 +1429,7 @@ void dual_feasibility_polish(const pdhg_parameters_t *params, pdhg_solver_state_
         state->inner_count += params->termination_evaluation_frequency;
         state->total_count += params->termination_evaluation_frequency;
 
-        check_feas_polishing_termination_criteria(state, &params->termination_criteria, false);
+        check_feas_polishing_termination_criteria(state, ori_state, &params->termination_criteria, false);
         if (state->total_count % get_print_frequency(state->total_count) == 0)
         {
             display_feas_polish_iteration_stats(state, params->verbose, false);
@@ -1506,8 +1506,8 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(
     primal_state->total_count = 0;
     primal_state->inner_count = 0;
     primal_state->termination_reason = TERMINATION_REASON_UNSPECIFIED;
-    primal_state->start_time = original_state->start_time;
-    primal_state->cumulative_time_sec = original_state->cumulative_time_sec;
+    primal_state->start_time = clock();
+    primal_state->cumulative_time_sec = 0.0;
     primal_state->best_primal_dual_residual_gap = INFINITY;
 
     // IGNORE DUAL RESIDUAL AND OBJECTIVE GAP
@@ -1634,8 +1634,8 @@ static pdhg_solver_state_t *initialize_dual_feas_polish_state(
     dual_state->total_count = 0;
     dual_state->inner_count = 0;
     dual_state->termination_reason = TERMINATION_REASON_UNSPECIFIED;
-    dual_state->start_time = original_state->start_time;
-    dual_state->cumulative_time_sec = original_state->cumulative_time_sec;
+    dual_state->start_time = clock();
+    dual_state->cumulative_time_sec = 0.0;
     dual_state->best_primal_dual_residual_gap = INFINITY;
 
     // IGNORE PRIMAL RESIDUAL AND OBJECTIVE GAP
