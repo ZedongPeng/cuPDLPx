@@ -26,6 +26,7 @@ limitations under the License.
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 __global__ void build_row_ind(const int *__restrict__ row_ptr,
@@ -119,28 +120,15 @@ __global__ void compute_next_dual_solution_major_kernel(
     double reflection_coeff);
 static void compute_next_primal_solution(pdhg_solver_state_t *state, const int k_offset, const double reflection_coefficient, bool is_major);
 static void compute_next_dual_solution(pdhg_solver_state_t *state,const int k_offset, const double reflection_coefficient, bool is_major);
-
-static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
-{
-    double current_primal_step = state->step_size / state->primal_weight;
-    double current_dual_step = state->step_size * state->primal_weight;
-
-    CUDA_CHECK(cudaMemcpyAsync(state->d_primal_step_size, &current_primal_step,
-                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
-    CUDA_CHECK(cudaMemcpyAsync(state->d_dual_step_size, &current_dual_step,
-                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
-}
-
-static void sync_inner_count_to_gpu(pdhg_solver_state_t *state)
-{
-    CUDA_CHECK(cudaMemcpyAsync(state->d_inner_count, &state->inner_count,
-                               sizeof(int), cudaMemcpyHostToDevice, state->stream));
-}
+static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state);
+static void sync_inner_count_to_gpu(pdhg_solver_state_t *state);
+static void check_params_validity(const pdhg_parameters_t *params);
 
 cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
                            const lp_problem_t *original_problem)
 {
     print_initial_info(params, original_problem);
+    check_params_validity(params);
 
     cupdlpx_presolve_info_t *presolve_info = NULL;
     const lp_problem_t *working_problem = original_problem;
@@ -159,7 +147,8 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     }
     
     pdhg_solver_state_t *state = initialize_solver_state(working_problem, params);
-    
+    display_iteration_stats(state, params->verbose);
+
     initialize_step_size_and_primal_weight(state, params);
     sync_step_sizes_to_gpu(state);
 
@@ -182,31 +171,28 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
             do_restart = false;
         }
 
-        if (params->termination_evaluation_frequency > 3)// TODO: remove this
+        if (!graph_created)
         {
-            if (!graph_created)
+            // Start CUDA graph capture
+            cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
+
+            for (int i = 2; i <= params->termination_evaluation_frequency - 1; i++)
             {
-                // Start CUDA graph capture
-                cudaStreamBeginCapture(state->stream, cudaStreamCaptureModeGlobal);
-
-                for (int i = 2; i <= params->termination_evaluation_frequency - 1; i++)
-                {
-                    compute_next_primal_solution(state, i, params->reflection_coefficient, false);
-                    compute_next_dual_solution(state, i, params->reflection_coefficient, false);
-                }
-
-                compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
-                compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
-                // end CUDA graph capture
-
-                cudaGraph_t graph;
-                CUDA_CHECK(cudaStreamEndCapture(state->stream, &graph));
-                CUDA_CHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
-                CUDA_CHECK(cudaGraphDestroy(graph));
-                graph_created = true;
+                compute_next_primal_solution(state, i, params->reflection_coefficient, false);
+                compute_next_dual_solution(state, i, params->reflection_coefficient, false);
             }
-            CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
+
+            compute_next_primal_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            compute_next_dual_solution(state, params->termination_evaluation_frequency, params->reflection_coefficient, true);
+            // end CUDA graph capture
+
+            cudaGraph_t graph;
+            CUDA_CHECK(cudaStreamEndCapture(state->stream, &graph));
+            CUDA_CHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+            CUDA_CHECK(cudaGraphDestroy(graph));
+            graph_created = true;
         }
+        CUDA_CHECK(cudaGraphLaunch(graphExec, state->stream));
         compute_fixed_point_error(state);
 
         compute_residual(state, params->optimality_norm);
@@ -273,6 +259,34 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
     pdhg_solver_state_free(state);
     CUDA_CHECK(cudaGetLastError());
     return result;
+}
+
+static void sync_step_sizes_to_gpu(pdhg_solver_state_t *state)
+{
+    double current_primal_step = state->step_size / state->primal_weight;
+    double current_dual_step = state->step_size * state->primal_weight;
+
+    CUDA_CHECK(cudaMemcpyAsync(state->d_primal_step_size, &current_primal_step,
+                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
+    CUDA_CHECK(cudaMemcpyAsync(state->d_dual_step_size, &current_dual_step,
+                               sizeof(double), cudaMemcpyHostToDevice, state->stream));
+}
+
+static void sync_inner_count_to_gpu(pdhg_solver_state_t *state)
+{
+    CUDA_CHECK(cudaMemcpyAsync(state->d_inner_count, &state->inner_count,
+                               sizeof(int), cudaMemcpyHostToDevice, state->stream));
+}
+
+static void check_params_validity(const pdhg_parameters_t *params)
+{
+    if (params->termination_evaluation_frequency < 3)
+    {
+        fprintf(stderr,
+                "Error: termination_evaluation_frequency must be >= 3 (got %d).\n",
+                params->termination_evaluation_frequency);
+        exit(EXIT_FAILURE);
+    }
 }
 
 __global__ void compute_and_rescale_reduced_cost_kernel(
@@ -693,7 +707,6 @@ __global__ void compute_next_primal_solution_kernel(
             current_primal[i] - step_size * (objective[i] - dual_product[i]);
         double temp_proj = fmax(var_lb[i], fmin(temp, var_ub[i]));
         reflected_primal[i] = 2.0 * temp_proj - current_primal[i];
-        // TODO, simplify reflected
         double reflected = reflection_coeff * reflected_primal[i] +
                            (1.0 - reflection_coeff) * current_primal[i];
         current_primal[i] = weight * reflected + (1.0 - weight) * initial_primal[i];
