@@ -260,17 +260,6 @@ void check_termination_criteria(pdhg_solver_state_t *solver_state,
         solver_state->termination_reason = TERMINATION_REASON_OPTIMAL;
         return;
     }
-    if (primal_infeasibility_criteria_met(solver_state,
-                                          criteria->eps_infeasible))
-    {
-        solver_state->termination_reason = TERMINATION_REASON_PRIMAL_INFEASIBLE;
-        return;
-    }
-    if (dual_infeasibility_criteria_met(solver_state, criteria->eps_infeasible))
-    {
-        solver_state->termination_reason = TERMINATION_REASON_DUAL_INFEASIBLE;
-        return;
-    }
     if (solver_state->total_count >= criteria->iteration_limit)
     {
         solver_state->termination_reason = TERMINATION_REASON_ITERATION_LIMIT;
@@ -337,7 +326,6 @@ void set_default_parameters(pdhg_parameters_t *params)
 
     params->termination_criteria.eps_optimal_relative = 1e-4;
     params->termination_criteria.eps_feasible_relative = 1e-4;
-    params->termination_criteria.eps_infeasible = 1e-10;
     params->termination_criteria.time_sec_limit = 3600.0;
     params->termination_criteria.iteration_limit = INT32_MAX;
     params->termination_criteria.eps_feas_polish_relative = 1e-6;
@@ -407,8 +395,6 @@ void print_initial_info(const pdhg_parameters_t *params,
            params->termination_criteria.eps_optimal_relative);
     printf("  eps_feas           : %.1e\n",
            params->termination_criteria.eps_feasible_relative);
-    printf("  eps_infeas_detect  : %.1e\n",
-           params->termination_criteria.eps_infeasible);
     if (params->optimality_norm != default_params.optimality_norm) {
         printf("  optimality_norm    : %s\n",
                params->optimality_norm == NORM_TYPE_L_INF ? "L_inf" : "L2");

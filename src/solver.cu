@@ -199,12 +199,6 @@ cupdlpx_result_t *optimize(const pdhg_parameters_t *params,
         state->inner_count += params->termination_evaluation_frequency;
         state->total_count += params->termination_evaluation_frequency;
 
-        // Check Infeasibility
-        if (state->total_count < 3 * params->termination_evaluation_frequency)
-        {
-            compute_infeasibility_information(state);
-        }
-
         // Logging
         if (state->total_count % get_print_frequency(state->total_count) == 0)
         {
