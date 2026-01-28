@@ -117,10 +117,10 @@ extern "C"
                      int **row_ptr, int **col_ind, double **vals, int *nnz_out);
 
     int csc_to_csr(const matrix_desc_t *desc,
-                   int **row_ptr, int **col_ind, double **vals, int *nnz_out);
+                   int **row_ptr, int **col_ind, double **vals);
 
     int coo_to_csr(const matrix_desc_t *desc,
-                   int **row_ptr, int **col_ind, double **vals, int *nnz_out);
+                   int **row_ptr, int **col_ind, double **vals);
 
     void check_feas_polishing_termination_criteria(
         pdhg_solver_state_t *solver_state,

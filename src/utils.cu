@@ -975,13 +975,12 @@ int dense_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
                  double **vals, int *nnz_out)
 {
     int m = desc->m, n = desc->n;
-    double tol = (desc->zero_tolerance > 0) ? desc->zero_tolerance : 1e-12;
 
     // count nnz
     int nnz = 0;
     for (int i = 0; i < m * n; ++i)
     {
-        if (fabs(desc->data.dense.A[i]) > tol)
+        if (fabs(desc->data.dense.A[i]) > 0.0)
             ++nnz;
     }
 
@@ -998,7 +997,7 @@ int dense_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
         for (int j = 0; j < n; ++j)
         {
             double v = desc->data.dense.A[i * n + j];
-            if (fabs(v) > tol)
+            if (fabs(v) > 0.0)
             {
                 (*col_ind)[nz] = j;
                 (*vals)[nz] = v;
@@ -1013,22 +1012,18 @@ int dense_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
 
 // convert CSC → CSR
 int csc_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
-               double **vals, int *nnz_out)
+               double **vals)
 {
     const int m = desc->m, n = desc->n;
     const int *col_ptr = desc->data.csc.col_ptr;
     const int *row_ind = desc->data.csc.row_ind;
     const double *v = desc->data.csc.vals;
 
-    const double tol = (desc->zero_tolerance > 0) ? desc->zero_tolerance : 0.0;
-
     // count entries per row
     *row_ptr = (int *)safe_malloc((size_t)(m + 1) * sizeof(int));
     for (int i = 0; i <= m; ++i)
         (*row_ptr)[i] = 0;
 
-    // count nnz
-    int eff_nnz = 0;
     for (int j = 0; j < n; ++j)
     {
         for (int k = col_ptr[j]; k < col_ptr[j + 1]; ++k)
@@ -1039,11 +1034,7 @@ int csc_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
                 fprintf(stderr, "[interface] CSC: row index out of range\n");
                 return -1;
             }
-            double val = v[k];
-            if (tol > 0 && fabs(val) <= tol)
-                continue;
             ++((*row_ptr)[ri + 1]);
-            ++eff_nnz;
         }
     }
 
@@ -1052,8 +1043,8 @@ int csc_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
         (*row_ptr)[i + 1] += (*row_ptr)[i];
 
     // allocate
-    *col_ind = (int *)safe_malloc((size_t)eff_nnz * sizeof(int));
-    *vals = (double *)safe_malloc((size_t)eff_nnz * sizeof(double));
+    *col_ind = (int *)safe_malloc((size_t)desc->data.csc.nnz * sizeof(int));
+    *vals = (double *)safe_malloc((size_t)desc->data.csc.nnz * sizeof(double));
 
     // next position to fill in each row
     int *next = (int *)safe_malloc((size_t)m * sizeof(int));
@@ -1067,8 +1058,6 @@ int csc_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
         {
             int ri = row_ind[k];
             double val = v[k];
-            if (tol > 0 && fabs(val) <= tol)
-                continue;
             int pos = next[ri]++;
             (*col_ind)[pos] = j;
             (*vals)[pos] = val;
@@ -1076,33 +1065,18 @@ int csc_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
     }
 
     free(next);
-    *nnz_out = eff_nnz;
     return 0;
 }
 
 // convert COO → CSR
 int coo_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
-               double **vals, int *nnz_out)
+               double **vals)
 {
     const int m = desc->m, n = desc->n;
-    const int nnz_in = desc->data.coo.nnz;
+    const int nnz = desc->data.coo.nnz;
     const int *r = desc->data.coo.row_ind;
     const int *c = desc->data.coo.col_ind;
     const double *v = desc->data.coo.vals;
-    const double tol = (desc->zero_tolerance > 0) ? desc->zero_tolerance : 0.0;
-
-    // count nnz
-    int nnz = 0;
-    if (tol > 0)
-    {
-        for (int k = 0; k < nnz_in; ++k)
-            if (fabs(v[k]) > tol)
-                ++nnz;
-    }
-    else
-    {
-        nnz = nnz_in;
-    }
 
     *row_ptr = (int *)safe_malloc((size_t)(m + 1) * sizeof(int));
     *col_ind = (int *)safe_malloc((size_t)nnz * sizeof(int));
@@ -1111,32 +1085,16 @@ int coo_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
     // count entries per row
     for (int i = 0; i <= m; ++i)
         (*row_ptr)[i] = 0;
-    if (tol > 0)
+
+    for (int k = 0; k < nnz; ++k)
     {
-        for (int k = 0; k < nnz_in; ++k)
-            if (fabs(v[k]) > tol)
-            {
-                int ri = r[k];
-                if (ri < 0 || ri >= m)
-                {
-                    fprintf(stderr, "[interface] COO: row index out of range\n");
-                    return -1;
-                }
-                ++((*row_ptr)[ri + 1]);
-            }
-    }
-    else
-    {
-        for (int k = 0; k < nnz_in; ++k)
+        int ri = r[k];
+        if (ri < 0 || ri >= m)
         {
-            int ri = r[k];
-            if (ri < 0 || ri >= m)
-            {
-                fprintf(stderr, "[interface] COO: row index out of range\n");
-                return -1;
-            }
-            ++((*row_ptr)[ri + 1]);
+            fprintf(stderr, "[interface] COO: row index out of range\n");
+            return -1;
         }
+        ++((*row_ptr)[ri + 1]);
     }
 
     // exclusive scan
@@ -1149,43 +1107,21 @@ int coo_to_csr(const matrix_desc_t *desc, int **row_ptr, int **col_ind,
         next[i] = (*row_ptr)[i];
 
     // fill column indices and values
-    if (tol > 0)
+    for (int k = 0; k < nnz; ++k)
     {
-        for (int k = 0; k < nnz_in; ++k)
+        int ri = r[k], cj = c[k];
+        if (cj < 0 || cj >= n)
         {
-            if (fabs(v[k]) <= tol)
-                continue;
-            int ri = r[k], cj = c[k];
-            if (cj < 0 || cj >= n)
-            {
-                fprintf(stderr, "[interface] COO: col index out of range\n");
-                free(next);
-                return -1;
-            }
-            int pos = next[ri]++;
-            (*col_ind)[pos] = cj;
-            (*vals)[pos] = v[k];
+            fprintf(stderr, "[interface] COO: col index out of range\n");
+            free(next);
+            return -1;
         }
-    }
-    else
-    {
-        for (int k = 0; k < nnz_in; ++k)
-        {
-            int ri = r[k], cj = c[k];
-            if (cj < 0 || cj >= n)
-            {
-                fprintf(stderr, "[interface] COO: col index out of range\n");
-                free(next);
-                return -1;
-            }
-            int pos = next[ri]++;
-            (*col_ind)[pos] = cj;
-            (*vals)[pos] = v[k];
-        }
+        int pos = next[ri]++;
+        (*col_ind)[pos] = cj;
+        (*vals)[pos] = v[k];
     }
 
     free(next);
-    *nnz_out = nnz;
     return 0;
 }
 

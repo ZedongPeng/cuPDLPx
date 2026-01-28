@@ -157,9 +157,6 @@ extern "C"
 		int n; // num_variables
 		matrix_format_t fmt;
 
-		// treat abs(x) < zero_tolerance as zero
-		double zero_tolerance;
-
 		union MatrixData
 		{
 			struct MatrixDense

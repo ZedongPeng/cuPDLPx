@@ -59,7 +59,6 @@ int main() {
     matrix_desc_t A_desc;
     A_desc.m = m; A_desc.n = n;
     A_desc.fmt = matrix_dense;
-    A_desc.zero_tolerance = 0.0;
     A_desc.data.dense.A = &A[0][0];
 
     // Objective coefficients
