@@ -270,6 +270,8 @@ static py::dict get_default_params_py()
     // presolve
     d["presolve"] = p.presolve;
 
+    d["matrix_zero_tol"] = p.matrix_zero_tol;
+
     return d;
 }
 
@@ -339,6 +341,8 @@ static void parse_params_from_python(py::object params_obj, pdhg_parameters_t *p
 
     // presolve
     getb("presolve", p->presolve);
+
+    getf("matrix_zero_tol", p->matrix_zero_tol);
 }
 
 // view of matrix from Python

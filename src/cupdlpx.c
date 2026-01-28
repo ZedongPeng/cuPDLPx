@@ -184,7 +184,7 @@ void set_start_values(lp_problem_t *prob, const double *primal,
     }
 }
 
-cupdlpx_result_t *solve_lp_problem(const lp_problem_t *prob,
+cupdlpx_result_t *solve_lp_problem(lp_problem_t *prob,
                                    const pdhg_parameters_t *params)
 {
     // argument checks
