@@ -143,6 +143,7 @@ Below is a list of commonly used parameters, their internal keys, and descriptio
 | `OutputFlag`, `LogToConsole` | `verbose` | bool | `False` | Enable (`True`) or disable (`False`) console logging output. |
 | `TermCheckFreq` | `termination_evaluation_frequency` | int | `200` | Frequency (in iterations) at which termination conditions are evaluated. |
 | `OptimalityNorm` | `optimality_norm` | string | `"l2"` | Norm for optimality criteria. Use `"l2"` for L2 norm or `"linf"` for infinity norm. |
+| `UseSpMVOp` | `use_spmvop` | bool | `True` | Use `cusparseSpMVOp` path (`True`) or fallback to classic `cusparseSpMV` (`False`). |
 | `OptimalityTol` | `eps_optimal_relative` | float | `1e-4` | Relative tolerance for optimality gap. Solver stops if the relative primal-dual gap ≤ this value. |
 | `FeasibilityTol` | `eps_feasible_relative` | float | `1e-4` | Relative feasibility tolerance for primal/dual residuals. |
 | `RuizIters` | `l_inf_ruiz_iterations` | int | `10` | Number of iterations for L∞ Ruiz scaling. Improves numerical conditioning. |

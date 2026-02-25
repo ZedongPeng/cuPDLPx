@@ -76,6 +76,7 @@ extern "C"
                                            cublasHandle_t blas_handle,
                                            const cu_sparse_matrix_csr_t *A,
                                            const cu_sparse_matrix_csr_t *AT,
+                                           bool use_spmvop,
                                            int max_iterations,
                                            double tolerance);
 
@@ -131,6 +132,13 @@ extern "C"
                                            norm_type_t optimality_norm);
 
     void set_default_parameters(pdhg_parameters_t *params);
+
+    void cupdlpx_spmv(pdhg_solver_state_t *state,
+                      cusparseSpMatDescr_t mat,
+                      cusparseDnVecDescr_t vec_x,
+                      cusparseDnVecDescr_t vec_y,
+                      void *buffer,
+                      cusparseSpMVOpPlan_t plan);
 
 #ifdef __cplusplus
 }

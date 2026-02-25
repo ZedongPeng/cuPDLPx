@@ -110,6 +110,7 @@ typedef struct
     double last_trial_fixed_point_error;
     int inner_count;
     int *d_inner_count;
+    bool use_spmvop;
 
     cusparseHandle_t sparse_handle;
     cublasHandle_t blas_handle;
@@ -126,6 +127,11 @@ typedef struct
     cusparseDnVecDescr_t vec_dual_sol;
     cusparseDnVecDescr_t vec_primal_prod;
     cusparseDnVecDescr_t vec_dual_prod;
+
+    cusparseSpMVOpDescr_t primal_spmv_descr;
+    cusparseSpMVOpPlan_t primal_spmv_plan;
+    cusparseSpMVOpDescr_t dual_spmv_descr;
+    cusparseSpMVOpPlan_t dual_spmv_plan;
 
     double *ones_primal_d;
     double *ones_dual_d;

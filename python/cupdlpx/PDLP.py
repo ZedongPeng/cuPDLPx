@@ -54,6 +54,7 @@ _PARAM_ALIAS = {
     "FeasibilityPolishingTol": "eps_feas_polish_relative",
     # termination criteria
     "OptimalityNorm": "optimality_norm",
+    "UseSpMVOp": "use_spmvop",
     # singular value estimation (power method)
     "SVMaxIter": "sv_max_iter",
     "SVTol": "sv_tol",

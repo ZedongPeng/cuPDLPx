@@ -209,6 +209,9 @@ void print_usage(const char *prog_name)
     fprintf(stderr,
             "      --matrix_zero_tol <tolerance>.  "
             "Zero tolerance in constraint matrix.\n");
+    fprintf(stderr,
+            "      --no_spmvop                    "
+            "Use classic cusparseSpMV instead of cusparseSpMVOp (default: SpMVOp).\n");
 }
 
 int main(int argc, char *argv[])
@@ -234,6 +237,7 @@ int main(int argc, char *argv[])
                                            {"opt_norm", required_argument, 0, 1014},
                                            {"no_presolve", no_argument, 0, 1015},
                                            {"matrix_zero_tol", required_argument, 0, 1016},
+                                           {"no_spmvop", no_argument, 0, 1017},
                                            {0, 0, 0, 0}};
 
     int opt;
@@ -309,6 +313,9 @@ int main(int argc, char *argv[])
                 break;
             case 1016: // --matrix_zero_tol
                 params.matrix_zero_tol = atof(optarg);
+                break;
+            case 1017: // --no_spmvop
+                params.use_spmvop = false;
                 break;
             case '?': // Unknown option
                 return 1;

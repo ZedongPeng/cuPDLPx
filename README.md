@@ -94,6 +94,7 @@ After building the project, the `./build/cupdlpx` binary can be invoked from the
 | `--eval_freq` | `int` | Termination evaluation frequency | `200` |
 | `--sv_max_iter` | `int` | Max iterations for singular value estimation | `5000` |
 | `--sv_tol` | `float` | Tolerance for singular value estimation | `1e-4` |
+| `--no_spmvop` | `flag` | Disable `cusparseSpMVOp` and use classic `cusparseSpMV` path | `SpMVOp enabled` |
 | `--no_presolve` | `flag` | Disable presolve | `enabled` |
 | `-f`,`--feasibility_polishing` |`flag` | Run the polishing loop | `false` |
 | `--eps_feas_polish` | `double` | Relative tolerance for polishing | `1e-6`  |
@@ -109,6 +110,7 @@ The solver generates three text files in the specified <output_directory>. The f
 
 ### Python Interface
 The `cupdlpx` Python package supports building and solving LPs directly with `NumPy` and `SciPy`.
+To control the SpMV backend in Python, set `UseSpMVOp` (alias of `use_spmvop`).
 Documentation and examples are available in the [Python API Guide](python/README.md).
 
 ### Julia Interface
