@@ -1412,4 +1412,3 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, co
 
     return results;
 }
-
