@@ -30,10 +30,7 @@ void compute_next_primal_solution(pdhg_solver_state_t *state,
                                   int k_offset,
                                   double reflection_coefficient,
                                   bool is_major);
-void compute_next_dual_solution(pdhg_solver_state_t *state,
-                                int k_offset,
-                                double reflection_coefficient,
-                                bool is_major);
+void compute_next_dual_solution(pdhg_solver_state_t *state, int k_offset, double reflection_coefficient, bool is_major);
 
 static void perform_primal_restart(pdhg_solver_state_t *state);
 static void perform_dual_restart(pdhg_solver_state_t *state);
