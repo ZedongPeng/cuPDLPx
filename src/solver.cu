@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 #include "cupdlpx.h"
-#include "feasibility_pump.h"
+#include "feasibility_polish.h"
 #include "internal_types.h"
 #include "preconditioner.h"
 #include "presolve.h"

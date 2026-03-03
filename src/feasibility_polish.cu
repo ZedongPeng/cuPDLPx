@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#include "feasibility_pump.h"
+#include "feasibility_polish.h"
 #include "utils.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
