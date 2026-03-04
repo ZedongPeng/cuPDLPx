@@ -117,7 +117,7 @@ if(NOT TARGET ZLIB::ZLIB)
 endif()
 
 # 2. PSLP Configuration
-set(PSLP_VERSION_TAG "v0.0.8")
+set(PSLP_VERSION_TAG "v0.0.6")
 FetchContent_Declare(
   pslp
   GIT_REPOSITORY https://github.com/dance858/PSLP.git
@@ -125,12 +125,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pslp)
 
-# --- PSLP FIX BLOCK (Cross-Platform & Header fix) ---
+# --- PSLP target include/flags normalization ---
 if(TARGET PSLP)
-    # Fix Linux absolute path error
-    set_target_properties(PSLP PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "")
-    
-    # Expose PSLP's internal headers that cuPDLPx needs
+    # Expose PSLP headers via target usage requirements (no directory-wide includes).
     target_include_directories(PSLP INTERFACE 
         $<BUILD_INTERFACE:${pslp_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${pslp_SOURCE_DIR}/include/PSLP>
