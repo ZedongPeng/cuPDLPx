@@ -43,7 +43,9 @@ add_library(cupdlpx_compile_flags INTERFACE)
 if(MSVC)
     target_compile_options(cupdlpx_compile_flags INTERFACE
         $<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:/O2 /W4 /Zi>
-        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler "/O2 /W4 /Zi">
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/O2>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/W4>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zi>
     )
     target_compile_definitions(cupdlpx_compile_flags INTERFACE 
         _CRT_SECURE_NO_WARNINGS
@@ -74,6 +76,11 @@ cmake_dependent_option(CUPDLPX_BUILD_PYTHON "Build the cuPDLPx Python bindings" 
 cmake_dependent_option(CUPDLPX_BUILD_CLI "Build the cuPDLPx command-line executable" ON "CUPDLPX_BUILD_STATIC_LIB" OFF)
 cmake_dependent_option(CUPDLPX_BUILD_TESTS "Build the cuPDLPx test suite" OFF "CUPDLPX_BUILD_STATIC_LIB" OFF)
 
+if(WIN32 AND CUPDLPX_BUILD_CLI)
+    message(STATUS "Disabling CUPDLPX_BUILD_CLI on Windows (MSVC) due to getopt.h/libgen.h dependency.")
+    set(CUPDLPX_BUILD_CLI OFF CACHE BOOL "Build the cuPDLPx command-line executable" FORCE)
+endif()
+
 # -----------------------------------------------------------------------------
 # FIND DEPENDENCIES
 # -----------------------------------------------------------------------------
@@ -81,8 +88,6 @@ find_package(CUDAToolkit REQUIRED)
 include(FetchContent)
 
 # 1. ZLIB Configuration
-
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 find_package(ZLIB QUIET)
 if(NOT ZLIB_FOUND)
     FetchContent_Declare(
@@ -90,21 +95,24 @@ if(NOT ZLIB_FOUND)
         GIT_REPOSITORY https://github.com/madler/zlib.git
         GIT_TAG        v1.3
     )
+    FetchContent_MakeAvailable(zlib)
+endif()
 
-    FetchContent_GetProperties(zlib)
-    if(NOT zlib_POPULATED)
-        FetchContent_Populate(zlib)
-
-        file(WRITE "${zlib_SOURCE_DIR}/zlib.pc.cmakein" "") 
-        add_subdirectory(${zlib_SOURCE_DIR} ${zlib_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
-
+if(NOT TARGET ZLIB::ZLIB)
     if(TARGET zlibstatic)
         add_library(ZLIB::ZLIB ALIAS zlibstatic)
-        target_include_directories(zlibstatic INTERFACE 
-            $<BUILD_INTERFACE:${zlib_SOURCE_DIR}> 
+        target_include_directories(zlibstatic INTERFACE
+            $<BUILD_INTERFACE:${zlib_SOURCE_DIR}>
             $<BUILD_INTERFACE:${zlib_BINARY_DIR}>
         )
+    elseif(TARGET zlib)
+        add_library(ZLIB::ZLIB ALIAS zlib)
+        target_include_directories(zlib INTERFACE
+            $<BUILD_INTERFACE:${zlib_SOURCE_DIR}>
+            $<BUILD_INTERFACE:${zlib_BINARY_DIR}>
+        )
+    else()
+        message(FATAL_ERROR "ZLIB target not found. Expected ZLIB::ZLIB, zlibstatic, or zlib.")
     endif()
 endif()
 
@@ -188,6 +196,10 @@ endif()
 
 # 3. CLI Executable
 if(CUPDLPX_BUILD_CLI)
+    if(NOT TARGET cupdlpx_core)
+        message(FATAL_ERROR "CUPDLPX_BUILD_CLI=ON requires CUPDLPX_BUILD_STATIC_LIB=ON.")
+    endif()
+
     add_executable(cupdlpx_cli src/cli.c)
     target_include_directories(cupdlpx_cli PRIVATE include internal)
     target_link_libraries(cupdlpx_cli PRIVATE cupdlpx_core)
@@ -200,6 +212,10 @@ endif()
 
 # 4. Tests
 if(CUPDLPX_BUILD_TESTS)
+    if(NOT TARGET cupdlpx_core)
+        message(FATAL_ERROR "CUPDLPX_BUILD_TESTS=ON requires CUPDLPX_BUILD_STATIC_LIB=ON.")
+    endif()
+
     enable_testing()
     file(GLOB TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cu")
     foreach(TEST_SRC ${TEST_SOURCES})
@@ -217,6 +233,10 @@ endif()
 
 # 5. Python Bindings
 if (CUPDLPX_BUILD_PYTHON)
+    if(NOT TARGET cupdlpx_core)
+        message(FATAL_ERROR "CUPDLPX_BUILD_PYTHON=ON requires CUPDLPX_BUILD_STATIC_LIB=ON.")
+    endif()
+
     find_package(pybind11 CONFIG REQUIRED)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_subdirectory(python_bindings)
