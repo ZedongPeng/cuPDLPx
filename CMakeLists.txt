@@ -117,7 +117,7 @@ if(NOT TARGET ZLIB::ZLIB)
 endif()
 
 # 2. PSLP Configuration
-set(PSLP_VERSION_TAG "v0.0.6")
+set(PSLP_VERSION_TAG "v0.0.8")
 FetchContent_Declare(
   pslp
   GIT_REPOSITORY https://github.com/dance858/PSLP.git
