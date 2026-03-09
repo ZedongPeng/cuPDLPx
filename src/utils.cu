@@ -25,35 +25,6 @@ limitations under the License.
 std::mt19937 gen(1);
 std::normal_distribution<double> dist(0.0, 1.0);
 
-const double HOST_ONE = 1.0;
-const double HOST_ZERO = 0.0;
-
-void cupdlpx_spmv(pdhg_solver_state_t *state,
-                  cusparseSpMatDescr_t mat,
-                  cusparseDnVecDescr_t vec_x,
-                  cusparseDnVecDescr_t vec_y,
-                  void *buffer,
-                  cusparseSpMVOpPlan_t plan)
-{
-    if (state->use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp(state->sparse_handle, plan, &HOST_ONE, &HOST_ZERO, vec_x, vec_y, vec_y));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                    &HOST_ONE,
-                                    mat,
-                                    vec_x,
-                                    &HOST_ZERO,
-                                    vec_y,
-                                    CUDA_R_64F,
-                                    CUSPARSE_SPMV_CSR_ALG2,
-                                    buffer));
-    }
-}
-
 void *safe_malloc(size_t size)
 {
     void *ptr = malloc(size);
@@ -96,12 +67,11 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
                                        cublasHandle_t blas_handle,
                                        const cu_sparse_matrix_csr_t *A,
                                        const cu_sparse_matrix_csr_t *AT,
-                                       bool use_spmvop,
                                        int max_iterations,
                                        double tolerance)
 {
-    int m = A->num_rows;
-    int n = A->num_cols;
+    const int m = A->num_rows;
+    const int n = A->num_cols;
     double *eigenvector_d, *next_eigenvector_d, *dual_product_d;
 
     CUDA_CHECK(cudaMalloc(&eigenvector_d, m * sizeof(double)));
@@ -119,7 +89,6 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
 
     double sigma_max_sq = 1.0;
     const double one = 1.0;
-    const double zero = 0.0;
 
     cusparseSpMatDescr_t matA, matAT;
     CUSPARSE_CHECK(cusparseCreateCsr(&matA,
@@ -150,109 +119,25 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecNextEigen, m, next_eigenvector_d, CUDA_R_64F));
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecDual, n, dual_product_d, CUDA_R_64F));
 
-    cusparseSpMVOpDescr_t descrAT = NULL, descrA = NULL;
-    cusparseSpMVOpPlan_t planAT = NULL, planA = NULL;
+    cusparseSpMVOpDescr_t descrAT = NULL;
+    cusparseSpMVOpDescr_t descrA = NULL;
+    cusparseSpMVOpPlan_t planAT = NULL;
+    cusparseSpMVOpPlan_t planA = NULL;
 
     void *dBufferAT = NULL;
     void *dBufferA = NULL;
     size_t bufferSizeAT = 0, bufferSizeA = 0;
-    if (use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp_bufferSize(sparse_handle,
-                                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                 matAT,
-                                                 vecNextEigen,
-                                                 vecDual,
-                                                 vecDual,
-                                                 CUDA_R_64F,
-                                                 &bufferSizeAT));
-        CUSPARSE_CHECK(cusparseSpMVOp_bufferSize(sparse_handle,
-                                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                 matA,
-                                                 vecDual,
-                                                 vecEigen,
-                                                 vecEigen,
-                                                 CUDA_R_64F,
-                                                 &bufferSizeA));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV_bufferSize(sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one,
-                                               matAT,
-                                               vecNextEigen,
-                                               &zero,
-                                               vecDual,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               &bufferSizeAT));
-        CUSPARSE_CHECK(cusparseSpMV_bufferSize(sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one,
-                                               matA,
-                                               vecDual,
-                                               &zero,
-                                               vecEigen,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               &bufferSizeA));
-    }
+    cupdlpx_spmv_buffer_size(sparse_handle, matAT, vecNextEigen, vecDual, &bufferSizeAT);
+    cupdlpx_spmv_buffer_size(sparse_handle, matA, vecDual, vecEigen, &bufferSizeA);
 
     CUDA_CHECK(cudaMalloc(&dBufferAT, bufferSizeAT));
     CUDA_CHECK(cudaMalloc(&dBufferA, bufferSizeA));
 
-    if (use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp_createDescr(sparse_handle,
-                                                  &descrAT,
-                                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                  matAT,
-                                                  vecNextEigen,
-                                                  vecDual,
-                                                  vecDual,
-                                                  CUDA_R_64F,
-                                                  dBufferAT));
-        CUSPARSE_CHECK(cusparseSpMVOp_createPlan(sparse_handle, descrAT, &planAT, NULL, 0));
-
-        CUSPARSE_CHECK(cusparseSpMVOp_createDescr(sparse_handle,
-                                                  &descrA,
-                                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                  matA,
-                                                  vecDual,
-                                                  vecEigen,
-                                                  vecEigen,
-                                                  CUDA_R_64F,
-                                                  dBufferA));
-        CUSPARSE_CHECK(cusparseSpMVOp_createPlan(sparse_handle, descrA, &planA, NULL, 0));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV_preprocess(sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one,
-                                               matAT,
-                                               vecNextEigen,
-                                               &zero,
-                                               vecDual,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               dBufferAT));
-        CUSPARSE_CHECK(cusparseSpMV_preprocess(sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one,
-                                               matA,
-                                               vecDual,
-                                               &zero,
-                                               vecEigen,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               dBufferA));
-    }
+    cupdlpx_spmv_prepare(sparse_handle, matAT, vecNextEigen, vecDual, dBufferAT, &descrAT, &planAT);
+    cupdlpx_spmv_prepare(sparse_handle, matA, vecDual, vecEigen, dBufferA, &descrA, &planA);
 
     for (int i = 0; i < max_iterations; ++i)
     {
-
         CUDA_CHECK(cudaMemcpy(next_eigenvector_d, eigenvector_d, m * sizeof(double), cudaMemcpyDeviceToDevice));
         double eigenvector_norm;
         CUBLAS_CHECK(cublasDnrm2_v2_64(blas_handle, m, next_eigenvector_d, 1, &eigenvector_norm));
@@ -260,34 +145,8 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
         double inv_eigenvector_norm = 1.0 / eigenvector_norm;
         CUBLAS_CHECK(cublasDscal(blas_handle, m, &inv_eigenvector_norm, next_eigenvector_d, 1));
 
-        if (use_spmvop)
-        {
-            CUSPARSE_CHECK(cusparseSpMVOp(sparse_handle, planAT, &one, &zero, vecNextEigen, vecDual, vecDual));
-            CUSPARSE_CHECK(cusparseSpMVOp(sparse_handle, planA, &one, &zero, vecDual, vecEigen, vecEigen));
-        }
-        else
-        {
-            CUSPARSE_CHECK(cusparseSpMV(sparse_handle,
-                                        CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                        &one,
-                                        matAT,
-                                        vecNextEigen,
-                                        &zero,
-                                        vecDual,
-                                        CUDA_R_64F,
-                                        CUSPARSE_SPMV_CSR_ALG2,
-                                        dBufferAT));
-            CUSPARSE_CHECK(cusparseSpMV(sparse_handle,
-                                        CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                        &one,
-                                        matA,
-                                        vecDual,
-                                        &zero,
-                                        vecEigen,
-                                        CUDA_R_64F,
-                                        CUSPARSE_SPMV_CSR_ALG2,
-                                        dBufferA));
-        }
+        cupdlpx_spmv_execute(sparse_handle, matAT, vecNextEigen, vecDual, dBufferAT, planAT);
+        cupdlpx_spmv_execute(sparse_handle, matA, vecDual, vecEigen, dBufferA, planA);
 
         CUBLAS_CHECK(cublasDdot(blas_handle, m, next_eigenvector_d, 1, eigenvector_d, 1, &sigma_max_sq));
 
@@ -304,14 +163,8 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
 
     CUDA_CHECK(cudaFree(dBufferAT));
     CUDA_CHECK(cudaFree(dBufferA));
-    if (descrAT)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyDescr(descrAT));
-    if (planAT)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyPlan(planAT));
-    if (descrA)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyDescr(descrA));
-    if (planA)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyPlan(planA));
+    cupdlpx_spmv_release(descrAT, planAT);
+    cupdlpx_spmv_release(descrA, planA);
     CUSPARSE_CHECK(cusparseDestroySpMat(matA));
     CUSPARSE_CHECK(cusparseDestroySpMat(matAT));
     CUSPARSE_CHECK(cusparseDestroyDnVec(vecEigen));
@@ -456,8 +309,6 @@ void set_default_parameters(pdhg_parameters_t *params)
     params->termination_evaluation_frequency = 200;
     params->feasibility_polishing = false;
     params->reflection_coefficient = 1.0;
-    params->use_spmvop = true;
-
     params->sv_max_iter = 5000;
     params->sv_tol = 1e-4;
 
@@ -622,6 +473,8 @@ void print_initial_info(const pdhg_parameters_t *params, lp_problem_t *problem)
     printf("  time_limit         : %.2f sec\n", params->termination_criteria.time_sec_limit);
     printf("  eps_opt            : %.1e\n", params->termination_criteria.eps_optimal_relative);
     printf("  eps_feas           : %.1e\n", params->termination_criteria.eps_feasible_relative);
+    printf("  spmv_backend       : %s (auto)\n",
+           cupdlpx_use_spmvop_by_default() ? "cusparseSpMVOp" : "cusparseSpMV");
     if (params->optimality_norm != default_params.optimality_norm)
     {
         printf("  optimality_norm    : %s\n", params->optimality_norm == NORM_TYPE_L_INF ? "L_inf" : "L2");
@@ -637,7 +490,6 @@ void print_initial_info(const pdhg_parameters_t *params, lp_problem_t *problem)
     PRINT_DIFF_INT(
         "evaluation_freq", params->termination_evaluation_frequency, default_params.termination_evaluation_frequency);
     PRINT_DIFF_BOOL("feasibility_polishing", params->feasibility_polishing, default_params.feasibility_polishing);
-    PRINT_DIFF_BOOL("use_spmvop", params->use_spmvop, default_params.use_spmvop);
     PRINT_DIFF_DBL("eps_feas_polish_relative",
                    params->termination_criteria.eps_feas_polish_relative,
                    default_params.termination_criteria.eps_feas_polish_relative);

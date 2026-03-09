@@ -17,6 +17,7 @@ limitations under the License.
 #pragma once
 
 #include "internal_types.h"
+#include "cusparse_compat.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cusparse.h>
@@ -63,9 +64,6 @@ extern "C"
 
 #define THREADS_PER_BLOCK 256
 
-    extern const double HOST_ONE;
-    extern const double HOST_ZERO;
-
     void *safe_malloc(size_t size);
 
     void *safe_calloc(size_t num, size_t size);
@@ -76,9 +74,33 @@ extern "C"
                                            cublasHandle_t blas_handle,
                                            const cu_sparse_matrix_csr_t *A,
                                            const cu_sparse_matrix_csr_t *AT,
-                                           bool use_spmvop,
                                            int max_iterations,
                                            double tolerance);
+
+    bool cupdlpx_use_spmvop_by_default(void);
+
+    void cupdlpx_spmv_buffer_size(cusparseHandle_t sparse_handle,
+                                  cusparseSpMatDescr_t mat,
+                                  cusparseDnVecDescr_t vec_x,
+                                  cusparseDnVecDescr_t vec_y,
+                                  size_t *buffer_size);
+
+    void cupdlpx_spmv_prepare(cusparseHandle_t sparse_handle,
+                              cusparseSpMatDescr_t mat,
+                              cusparseDnVecDescr_t vec_x,
+                              cusparseDnVecDescr_t vec_y,
+                              void *buffer,
+                              cusparseSpMVOpDescr_t *descr,
+                              cusparseSpMVOpPlan_t *plan);
+
+    void cupdlpx_spmv_release(cusparseSpMVOpDescr_t descr, cusparseSpMVOpPlan_t plan);
+
+    void cupdlpx_spmv_execute(cusparseHandle_t sparse_handle,
+                              cusparseSpMatDescr_t mat,
+                              cusparseDnVecDescr_t vec_x,
+                              cusparseDnVecDescr_t vec_y,
+                              void *buffer,
+                              cusparseSpMVOpPlan_t plan);
 
     void compute_interaction_and_movement(pdhg_solver_state_t *solver_state, double *interaction, double *movement);
 

@@ -99,7 +99,6 @@ extern "C"
         double reflection_coefficient;
         bool feasibility_polishing;
         norm_type_t optimality_norm;
-        bool use_spmvop;
         bool presolve;
         double matrix_zero_tol;
     } pdhg_parameters_t;

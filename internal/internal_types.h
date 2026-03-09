@@ -17,6 +17,7 @@ limitations under the License.
 #pragma once
 
 #include "cupdlpx_types.h"
+#include "cusparse_compat.h"
 #include <cublas_v2.h>
 #include <cusparse.h>
 #include <stdbool.h>
@@ -110,7 +111,6 @@ typedef struct
     double last_trial_fixed_point_error;
     int inner_count;
     int *d_inner_count;
-    bool use_spmvop;
 
     cusparseHandle_t sparse_handle;
     cublasHandle_t blas_handle;

@@ -270,7 +270,6 @@ static py::dict get_default_params_py()
 
     // Termination criteria norm
     d["optimality_norm"] = (p.optimality_norm == NORM_TYPE_L_INF) ? "linf" : "l2";
-    d["use_spmvop"] = p.use_spmvop;
     // power method for singular value estimation
     d["sv_max_iter"] = p.sv_max_iter;
     d["sv_tol"] = p.sv_tol;
@@ -355,7 +354,6 @@ static void parse_params_from_python(py::object params_obj, pdhg_parameters_t *p
 
     // Termination criteria norm
     get_norm("optimality_norm", p->optimality_norm);
-    getb("use_spmvop", p->use_spmvop);
     // power method for singular value estimation
     geti("sv_max_iter", p->sv_max_iter);
     getf("sv_tol", p->sv_tol);

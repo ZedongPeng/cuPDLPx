@@ -599,7 +599,6 @@ static pdhg_solver_state_t *initialize_solver_state(const lp_problem_t *working_
     state->last_trial_fixed_point_error = INFINITY;
     state->step_size = 0.0;
     state->is_this_major_iteration = false;
-    state->use_spmvop = params->use_spmvop;
 
     size_t primal_spmv_buffer_size;
     size_t dual_spmv_buffer_size;
@@ -637,107 +636,27 @@ static pdhg_solver_state_t *initialize_solver_state(const lp_problem_t *working_
     CUSPARSE_CHECK(
         cusparseCreateDnVec(&state->vec_primal_prod, state->num_constraints, state->primal_product, CUDA_R_64F));
     CUSPARSE_CHECK(cusparseCreateDnVec(&state->vec_dual_prod, state->num_variables, state->dual_product, CUDA_R_64F));
-    if (state->use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp_bufferSize(state->sparse_handle,
-                                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                 state->matA,
-                                                 state->vec_primal_sol,
-                                                 state->vec_primal_prod,
-                                                 state->vec_primal_prod,
-                                                 CUDA_R_64F,
-                                                 &primal_spmv_buffer_size));
-
-        CUSPARSE_CHECK(cusparseSpMVOp_bufferSize(state->sparse_handle,
-                                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                 state->matAt,
-                                                 state->vec_dual_sol,
-                                                 state->vec_dual_prod,
-                                                 state->vec_dual_prod,
-                                                 CUDA_R_64F,
-                                                 &dual_spmv_buffer_size));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV_bufferSize(state->sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &HOST_ONE,
-                                               state->matA,
-                                               state->vec_primal_sol,
-                                               &HOST_ZERO,
-                                               state->vec_primal_prod,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               &primal_spmv_buffer_size));
-
-        CUSPARSE_CHECK(cusparseSpMV_bufferSize(state->sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &HOST_ONE,
-                                               state->matAt,
-                                               state->vec_dual_sol,
-                                               &HOST_ZERO,
-                                               state->vec_dual_prod,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               &dual_spmv_buffer_size));
-    }
+    cupdlpx_spmv_buffer_size(
+        state->sparse_handle, state->matA, state->vec_primal_sol, state->vec_primal_prod, &primal_spmv_buffer_size);
+    cupdlpx_spmv_buffer_size(
+        state->sparse_handle, state->matAt, state->vec_dual_sol, state->vec_dual_prod, &dual_spmv_buffer_size);
     CUDA_CHECK(cudaMalloc(&state->primal_spmv_buffer, primal_spmv_buffer_size));
-    if (state->use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp_createDescr(state->sparse_handle,
-                                                  &state->primal_spmv_descr,
-                                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                  state->matA,
-                                                  state->vec_primal_sol,
-                                                  state->vec_primal_prod,
-                                                  state->vec_primal_prod,
-                                                  CUDA_R_64F,
-                                                  state->primal_spmv_buffer));
-        CUSPARSE_CHECK(cusparseSpMVOp_createPlan(
-            state->sparse_handle, state->primal_spmv_descr, &state->primal_spmv_plan, NULL, 0));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV_preprocess(state->sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &HOST_ONE,
-                                               state->matA,
-                                               state->vec_primal_sol,
-                                               &HOST_ZERO,
-                                               state->vec_primal_prod,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               state->primal_spmv_buffer));
-    }
+    cupdlpx_spmv_prepare(state->sparse_handle,
+                         state->matA,
+                         state->vec_primal_sol,
+                         state->vec_primal_prod,
+                         state->primal_spmv_buffer,
+                         &state->primal_spmv_descr,
+                         &state->primal_spmv_plan);
 
     CUDA_CHECK(cudaMalloc(&state->dual_spmv_buffer, dual_spmv_buffer_size));
-    if (state->use_spmvop)
-    {
-        CUSPARSE_CHECK(cusparseSpMVOp_createDescr(state->sparse_handle,
-                                                  &state->dual_spmv_descr,
-                                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                                  state->matAt,
-                                                  state->vec_dual_sol,
-                                                  state->vec_dual_prod,
-                                                  state->vec_dual_prod,
-                                                  CUDA_R_64F,
-                                                  state->dual_spmv_buffer));
-        CUSPARSE_CHECK(
-            cusparseSpMVOp_createPlan(state->sparse_handle, state->dual_spmv_descr, &state->dual_spmv_plan, NULL, 0));
-    }
-    else
-    {
-        CUSPARSE_CHECK(cusparseSpMV_preprocess(state->sparse_handle,
-                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &HOST_ONE,
-                                               state->matAt,
-                                               state->vec_dual_sol,
-                                               &HOST_ZERO,
-                                               state->vec_dual_prod,
-                                               CUDA_R_64F,
-                                               CUSPARSE_SPMV_CSR_ALG2,
-                                               state->dual_spmv_buffer));
-    }
+    cupdlpx_spmv_prepare(state->sparse_handle,
+                         state->matAt,
+                         state->vec_dual_sol,
+                         state->vec_dual_prod,
+                         state->dual_spmv_buffer,
+                         &state->dual_spmv_descr,
+                         &state->dual_spmv_plan);
 
     CUDA_CHECK(cudaMalloc(&state->d_primal_step_size, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&state->d_dual_step_size, sizeof(double)));
@@ -1190,7 +1109,6 @@ static void initialize_step_size_and_primal_weight(pdhg_solver_state_t *state, c
                                                         state->blas_handle,
                                                         state->constraint_matrix,
                                                         state->constraint_matrix_t,
-                                                        params->use_spmvop,
                                                         params->sv_max_iter,
                                                         params->sv_tol);
         state->step_size = 0.998 / max_sv;
@@ -1268,14 +1186,8 @@ void pdhg_solver_state_free(pdhg_solver_state_t *state)
         CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_primal_prod));
     if (state->vec_dual_prod)
         CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_dual_prod));
-    if (state->primal_spmv_descr)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyDescr(state->primal_spmv_descr));
-    if (state->primal_spmv_plan)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyPlan(state->primal_spmv_plan));
-    if (state->dual_spmv_descr)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyDescr(state->dual_spmv_descr));
-    if (state->dual_spmv_plan)
-        CUSPARSE_CHECK(cusparseSpMVOp_destroyPlan(state->dual_spmv_plan));
+    cupdlpx_spmv_release(state->primal_spmv_descr, state->primal_spmv_plan);
+    cupdlpx_spmv_release(state->dual_spmv_descr, state->dual_spmv_plan);
     if (state->primal_spmv_buffer)
         CUDA_CHECK(cudaFree(state->primal_spmv_buffer));
     if (state->dual_spmv_buffer)
