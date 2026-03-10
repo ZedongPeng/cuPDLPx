@@ -1,6 +1,6 @@
 # python_bindings/CMakeLists.txt
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 
 # sources
 set(PYBIND_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/_core_bindings.cpp)
@@ -13,11 +13,13 @@ target_link_libraries(_cupdlpx_core PRIVATE
 )
 
 # set rpath so that the module can find the shared libraries at runtime
-set_target_properties(_cupdlpx_core PROPERTIES
-  BUILD_WITH_INSTALL_RPATH TRUE
-  INSTALL_RPATH "$ORIGIN/../lib"
-  BUILD_RPATH   "$ORIGIN/../lib"
-)
+if(NOT WIN32)
+  set_target_properties(_cupdlpx_core PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH "$ORIGIN/../lib"
+    BUILD_RPATH   "$ORIGIN/../lib"
+  )
+endif()
 
 # better error messages from pybind11
 target_compile_definitions(_cupdlpx_core PRIVATE PYBIND11_DETAILED_ERROR_MESSAGES=1)
@@ -34,3 +36,12 @@ install(TARGETS _cupdlpx_core
   RUNTIME DESTINATION cupdlpx
   ARCHIVE DESTINATION cupdlpx
 )
+
+if(WIN32)
+  # Install runtime DLL dependencies next to the extension module so Python can
+  # resolve them without additional os.add_dll_directory(...) calls.
+  install(FILES $<TARGET_RUNTIME_DLLS:_cupdlpx_core>
+    DESTINATION cupdlpx
+    OPTIONAL
+  )
+endif()

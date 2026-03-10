@@ -12,6 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import platform
+
+# Windows only: register CUDA bin for dependent DLL loading.
+if platform.system() == "Windows":
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        bin_path = os.path.join(cuda_path, "bin")
+        if os.path.isdir(bin_path):
+            os.add_dll_directory(bin_path)
+
 from .model import Model
 from . import PDLP
 
