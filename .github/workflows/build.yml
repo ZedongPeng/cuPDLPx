@@ -13,6 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        cuda: ["12.4.0", "12.5.0", "12.6.0", "12.8.0", "12.9.0", "13.0.0", "13.1.0"]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -21,7 +22,7 @@ jobs:
       - uses: Jimver/cuda-toolkit@v0.2.30
         id: cuda-toolkit
         with:
-          cuda: "13.1.0"
+          cuda: ${{ matrix.cuda }}
 
       - name: CUDA info
         run: |
