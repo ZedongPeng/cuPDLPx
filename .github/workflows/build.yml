@@ -23,6 +23,7 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: ${{ matrix.cuda }}
+          linux-local-args: '["--toolkit"]'
 
       - name: CUDA info
         run: |
