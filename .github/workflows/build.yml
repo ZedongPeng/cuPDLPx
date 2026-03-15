@@ -23,8 +23,6 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: ${{ matrix.cuda }}
-          method: 'network'
-          log-file-suffix: '${{ matrix.os }}-${{ matrix.cuda }}.txt'
 
       - name: CUDA info
         run: |
