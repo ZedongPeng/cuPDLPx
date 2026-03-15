@@ -16,8 +16,8 @@ limitations under the License.
 
 #pragma once
 
-#include "internal_types.h"
 #include "cusparse_compat.h"
+#include "internal_types.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cusparse.h>

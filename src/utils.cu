@@ -473,8 +473,7 @@ void print_initial_info(const pdhg_parameters_t *params, lp_problem_t *problem)
     printf("  time_limit         : %.2f sec\n", params->termination_criteria.time_sec_limit);
     printf("  eps_opt            : %.1e\n", params->termination_criteria.eps_optimal_relative);
     printf("  eps_feas           : %.1e\n", params->termination_criteria.eps_feasible_relative);
-    printf("  spmv_backend       : %s (auto)\n",
-           cupdlpx_use_spmvop_by_default() ? "cusparseSpMVOp" : "cusparseSpMV");
+    printf("  spmv_backend       : %s (auto)\n", cupdlpx_use_spmvop_by_default() ? "cusparseSpMVOp" : "cusparseSpMV");
     if (params->optimality_norm != default_params.optimality_norm)
     {
         printf("  optimality_norm    : %s\n", params->optimality_norm == NORM_TYPE_L_INF ? "L_inf" : "L2");

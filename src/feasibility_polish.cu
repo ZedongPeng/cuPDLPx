@@ -342,12 +342,12 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(const pdhg_solve
     primal_state->objective_gap = 0.0;
 
     primal_state->spmv_ctx = cupdlpx_spmv_ctx_create(primal_state->sparse_handle,
-                                                      primal_state->constraint_matrix,
-                                                      primal_state->constraint_matrix_t,
-                                                      primal_state->pdhg_primal_solution,
-                                                      primal_state->primal_product,
-                                                      primal_state->pdhg_dual_solution,
-                                                      primal_state->dual_product);
+                                                     primal_state->constraint_matrix,
+                                                     primal_state->constraint_matrix_t,
+                                                     primal_state->pdhg_primal_solution,
+                                                     primal_state->primal_product,
+                                                     primal_state->pdhg_dual_solution,
+                                                     primal_state->dual_product);
 
     return primal_state;
 }
@@ -484,12 +484,12 @@ static pdhg_solver_state_t *initialize_dual_feas_polish_state(const pdhg_solver_
     dual_state->objective_gap = 0.0;
 
     dual_state->spmv_ctx = cupdlpx_spmv_ctx_create(dual_state->sparse_handle,
-                                                    dual_state->constraint_matrix,
-                                                    dual_state->constraint_matrix_t,
-                                                    dual_state->pdhg_primal_solution,
-                                                    dual_state->primal_product,
-                                                    dual_state->pdhg_dual_solution,
-                                                    dual_state->dual_product);
+                                                   dual_state->constraint_matrix,
+                                                   dual_state->constraint_matrix_t,
+                                                   dual_state->pdhg_primal_solution,
+                                                   dual_state->primal_product,
+                                                   dual_state->pdhg_dual_solution,
+                                                   dual_state->dual_product);
 
     return dual_state;
 }
