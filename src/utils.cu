@@ -305,7 +305,7 @@ void set_default_parameters(pdhg_parameters_t *params)
     params->has_pock_chambolle_alpha = true;
     params->pock_chambolle_alpha = 1.0;
     params->bound_objective_rescaling = true;
-    params->verbose = false;
+    params->verbose = true;
     params->termination_evaluation_frequency = 200;
     params->feasibility_polishing = false;
     params->reflection_coefficient = 1.0;
@@ -507,21 +507,21 @@ void pdhg_final_log(const cupdlpx_result_t *result, const pdhg_parameters_t *par
     {
         printf("-------------------------------------------------------------------"
                "--------------------\n");
+        printf("Solution Summary\n");
+        printf("  Status                 : %s\n", termination_reason_to_string(result->termination_reason));
+        if (params->presolve)
+        {
+            printf("  Presolve time          : %.3g sec\n", result->presolve_time);
+        }
+        printf("  Precondition time      : %.5g sec\n", result->rescaling_time_sec);
+        printf("  Solve time             : %.3g sec\n", result->cumulative_time_sec);
+        printf("  Iterations             : %d\n", result->total_count);
+        printf("  Primal objective       : %.10g\n", result->primal_objective_value);
+        printf("  Dual objective         : %.10g\n", result->dual_objective_value);
+        printf("  Objective gap          : %.3e\n", result->relative_objective_gap);
+        printf("  Primal infeas          : %.3e\n", result->relative_primal_residual);
+        printf("  Dual infeas            : %.3e\n", result->relative_dual_residual);
     }
-    printf("Solution Summary\n");
-    printf("  Status                 : %s\n", termination_reason_to_string(result->termination_reason));
-    if (params->presolve)
-    {
-        printf("  Presolve time          : %.3g sec\n", result->presolve_time);
-    }
-    printf("  Precondition time      : %.5g sec\n", result->rescaling_time_sec);
-    printf("  Solve time             : %.3g sec\n", result->cumulative_time_sec);
-    printf("  Iterations             : %d\n", result->total_count);
-    printf("  Primal objective       : %.10g\n", result->primal_objective_value);
-    printf("  Dual objective         : %.10g\n", result->dual_objective_value);
-    printf("  Objective gap          : %.3e\n", result->relative_objective_gap);
-    printf("  Primal infeas          : %.3e\n", result->relative_primal_residual);
-    printf("  Dual infeas            : %.3e\n", result->relative_dual_residual);
 
     // if (stats != NULL && stats->n_rows_original > 0) {
     //     printf("\nPresolve Summary\n");

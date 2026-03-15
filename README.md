@@ -82,7 +82,8 @@ After building the project, the `./build/cupdlpx` binary can be invoked from the
 | Option | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `-h`, `--help` | `flag` | Display the help message. | N/A |
-| `-v`, `--verbose` | `flag` | Enable verbose logging. | `false` |
+| `-v`, `--verbose` | `flag` | Verbose logging (enabled by default). | `true` |
+| `-q`, `--quiet` | `flag` | Disable verbose logging. | `false` |
 | `--time_limit` | `double` | Time limit in seconds. | `3600.0` |
 | `--iter_limit` | `int` | Iteration limit. | `2147483647` |
 | `--opt_norm` | `string` | Norm for optimality criteria: `l2` or `linf` | `l2` |

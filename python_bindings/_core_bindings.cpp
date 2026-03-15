@@ -543,7 +543,7 @@ static py::dict solve_once(py::object A,
         auto xb = x.request(), yb = y.request(), rcb = rc.request();
         std::memcpy(xb.ptr, res->primal_solution, sizeof(double) * n_out);
         std::memcpy(yb.ptr, res->dual_solution, sizeof(double) * m_out);
-        std::memcpy(rcb.ptr, res->reduced_costs, sizeof(double) * n_out);
+        std::memcpy(rcb.ptr, res->reduced_cost, sizeof(double) * n_out);
     }
     // build info dict
     py::dict info;
