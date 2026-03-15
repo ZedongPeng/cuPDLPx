@@ -119,10 +119,10 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecNextEigen, m, next_eigenvector_d, CUDA_R_64F));
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecDual, n, dual_product_d, CUDA_R_64F));
 
-    cusparseSpMVOpDescr_t descrAT = NULL;
-    cusparseSpMVOpDescr_t descrA = NULL;
-    cusparseSpMVOpPlan_t planAT = NULL;
-    cusparseSpMVOpPlan_t planA = NULL;
+    void *descrAT = NULL;
+    void *descrA = NULL;
+    void *planAT = NULL;
+    void *planA = NULL;
 
     void *dBufferAT = NULL;
     void *dBufferA = NULL;
@@ -750,20 +750,8 @@ static double get_vector_sum(cublasHandle_t handle, int n, double *ones_d, const
 
 void compute_residual(pdhg_solver_state_t *state, norm_type_t optimality_norm)
 {
-    cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution);
-    cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution);
-    cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product);
-    cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product);
-
-    cupdlpx_spmv(state,
-                 state->matA,
-                 state->vec_primal_sol,
-                 state->vec_primal_prod,
-                 state->primal_spmv_buffer,
-                 state->primal_spmv_plan);
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->pdhg_primal_solution, state->primal_product);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->pdhg_dual_solution, state->dual_product);
 
     compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual,
@@ -863,20 +851,8 @@ void compute_infeasibility_information(pdhg_solver_state_t *state)
     double dual_ray_inf_norm =
         get_vector_inf_norm(state->blas_handle, state->num_constraints, state->delta_dual_solution);
 
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol, state->delta_primal_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->delta_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    cupdlpx_spmv(state,
-                 state->matA,
-                 state->vec_primal_sol,
-                 state->vec_primal_prod,
-                 state->primal_spmv_buffer,
-                 state->primal_spmv_plan);
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->delta_primal_solution, state->primal_product);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->delta_dual_solution, state->dual_product);
 
     CUBLAS_CHECK(cublasDdot(state->blas_handle,
                             state->num_variables,
@@ -1257,15 +1233,7 @@ void compute_primal_feas_polish_residual(pdhg_solver_state_t *state,
                                          const pdhg_solver_state_t *ori_state,
                                          norm_type_t optimality_norm)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-
-    cupdlpx_spmv(state,
-                 state->matA,
-                 state->vec_primal_sol,
-                 state->vec_primal_prod,
-                 state->primal_spmv_buffer,
-                 state->primal_spmv_plan);
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->pdhg_primal_solution, state->primal_product);
 
     compute_primal_feas_polish_residual_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual,
@@ -1306,11 +1274,7 @@ void compute_dual_feas_polish_residual(pdhg_solver_state_t *state,
                                        const pdhg_solver_state_t *ori_state,
                                        norm_type_t optimality_norm)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->pdhg_dual_solution, state->dual_product);
 
     compute_dual_feas_polish_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
         state->dual_residual,

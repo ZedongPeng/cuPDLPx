@@ -90,17 +90,31 @@ extern "C"
                               cusparseDnVecDescr_t vec_x,
                               cusparseDnVecDescr_t vec_y,
                               void *buffer,
-                              cusparseSpMVOpDescr_t *descr,
-                              cusparseSpMVOpPlan_t *plan);
+                              void **descr,
+                              void **plan);
 
-    void cupdlpx_spmv_release(cusparseSpMVOpDescr_t descr, cusparseSpMVOpPlan_t plan);
+    void cupdlpx_spmv_release(void *descr, void *plan);
 
     void cupdlpx_spmv_execute(cusparseHandle_t sparse_handle,
                               cusparseSpMatDescr_t mat,
                               cusparseDnVecDescr_t vec_x,
                               cusparseDnVecDescr_t vec_y,
                               void *buffer,
-                              cusparseSpMVOpPlan_t plan);
+                              void *plan);
+
+    void *cupdlpx_spmv_ctx_create(cusparseHandle_t sparse_handle,
+                                  const cu_sparse_matrix_csr_t *A,
+                                  const cu_sparse_matrix_csr_t *AT,
+                                  const double *ax_x_init,
+                                  double *ax_y_init,
+                                  const double *atx_x_init,
+                                  double *atx_y_init);
+
+    void cupdlpx_spmv_ctx_destroy(void *ctx);
+
+    void cupdlpx_spmv_Ax(cusparseHandle_t sparse_handle, void *ctx, const double *x, double *y);
+
+    void cupdlpx_spmv_ATx(cusparseHandle_t sparse_handle, void *ctx, const double *x, double *y);
 
     void compute_interaction_and_movement(pdhg_solver_state_t *solver_state, double *interaction, double *movement);
 
@@ -154,13 +168,6 @@ extern "C"
                                            norm_type_t optimality_norm);
 
     void set_default_parameters(pdhg_parameters_t *params);
-
-    void cupdlpx_spmv(pdhg_solver_state_t *state,
-                      cusparseSpMatDescr_t mat,
-                      cusparseDnVecDescr_t vec_x,
-                      cusparseDnVecDescr_t vec_y,
-                      void *buffer,
-                      cusparseSpMVOpPlan_t plan);
 
 #ifdef __cplusplus
 }

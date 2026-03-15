@@ -114,24 +114,7 @@ typedef struct
 
     cusparseHandle_t sparse_handle;
     cublasHandle_t blas_handle;
-    size_t spmv_buffer_size;
-    size_t primal_spmv_buffer_size;
-    size_t dual_spmv_buffer_size;
-    void *primal_spmv_buffer;
-    void *dual_spmv_buffer;
-    void *spmv_buffer;
-
-    cusparseSpMatDescr_t matA;
-    cusparseSpMatDescr_t matAt;
-    cusparseDnVecDescr_t vec_primal_sol;
-    cusparseDnVecDescr_t vec_dual_sol;
-    cusparseDnVecDescr_t vec_primal_prod;
-    cusparseDnVecDescr_t vec_dual_prod;
-
-    cusparseSpMVOpDescr_t primal_spmv_descr;
-    cusparseSpMVOpPlan_t primal_spmv_plan;
-    cusparseSpMVOpDescr_t dual_spmv_descr;
-    cusparseSpMVOpPlan_t dual_spmv_plan;
+    void *spmv_ctx;
 
     double *ones_primal_d;
     double *ones_dual_d;

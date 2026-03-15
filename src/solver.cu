@@ -600,64 +600,6 @@ static pdhg_solver_state_t *initialize_solver_state(const lp_problem_t *working_
     state->step_size = 0.0;
     state->is_this_major_iteration = false;
 
-    size_t primal_spmv_buffer_size;
-    size_t dual_spmv_buffer_size;
-
-    CUSPARSE_CHECK(cusparseCreateCsr(&state->matA,
-                                     state->num_constraints,
-                                     state->num_variables,
-                                     state->constraint_matrix->num_nonzeros,
-                                     state->constraint_matrix->row_ptr,
-                                     state->constraint_matrix->col_ind,
-                                     state->constraint_matrix->val,
-                                     CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_BASE_ZERO,
-                                     CUDA_R_64F));
-    CUDA_CHECK(cudaGetLastError());
-
-    CUSPARSE_CHECK(cusparseCreateCsr(&state->matAt,
-                                     state->num_variables,
-                                     state->num_constraints,
-                                     state->constraint_matrix_t->num_nonzeros,
-                                     state->constraint_matrix_t->row_ptr,
-                                     state->constraint_matrix_t->col_ind,
-                                     state->constraint_matrix_t->val,
-                                     CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_32I,
-                                     CUSPARSE_INDEX_BASE_ZERO,
-                                     CUDA_R_64F));
-    CUDA_CHECK(cudaGetLastError());
-
-    CUSPARSE_CHECK(
-        cusparseCreateDnVec(&state->vec_primal_sol, state->num_variables, state->pdhg_primal_solution, CUDA_R_64F));
-    CUSPARSE_CHECK(
-        cusparseCreateDnVec(&state->vec_dual_sol, state->num_constraints, state->pdhg_dual_solution, CUDA_R_64F));
-    CUSPARSE_CHECK(
-        cusparseCreateDnVec(&state->vec_primal_prod, state->num_constraints, state->primal_product, CUDA_R_64F));
-    CUSPARSE_CHECK(cusparseCreateDnVec(&state->vec_dual_prod, state->num_variables, state->dual_product, CUDA_R_64F));
-    cupdlpx_spmv_buffer_size(
-        state->sparse_handle, state->matA, state->vec_primal_sol, state->vec_primal_prod, &primal_spmv_buffer_size);
-    cupdlpx_spmv_buffer_size(
-        state->sparse_handle, state->matAt, state->vec_dual_sol, state->vec_dual_prod, &dual_spmv_buffer_size);
-    CUDA_CHECK(cudaMalloc(&state->primal_spmv_buffer, primal_spmv_buffer_size));
-    cupdlpx_spmv_prepare(state->sparse_handle,
-                         state->matA,
-                         state->vec_primal_sol,
-                         state->vec_primal_prod,
-                         state->primal_spmv_buffer,
-                         &state->primal_spmv_descr,
-                         &state->primal_spmv_plan);
-
-    CUDA_CHECK(cudaMalloc(&state->dual_spmv_buffer, dual_spmv_buffer_size));
-    cupdlpx_spmv_prepare(state->sparse_handle,
-                         state->matAt,
-                         state->vec_dual_sol,
-                         state->vec_dual_prod,
-                         state->dual_spmv_buffer,
-                         &state->dual_spmv_descr,
-                         &state->dual_spmv_plan);
-
     CUDA_CHECK(cudaMalloc(&state->d_primal_step_size, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&state->d_dual_step_size, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&state->d_inner_count, sizeof(int)));
@@ -686,6 +628,14 @@ static pdhg_solver_state_t *initialize_solver_state(const lp_problem_t *working_
     CUDA_CHECK(cudaStreamCreate(&state->stream));
     CUSPARSE_CHECK(cusparseSetStream(state->sparse_handle, state->stream));
     CUBLAS_CHECK(cublasSetStream(state->blas_handle, state->stream));
+
+    state->spmv_ctx = cupdlpx_spmv_ctx_create(state->sparse_handle,
+                                              state->constraint_matrix,
+                                              state->constraint_matrix_t,
+                                              state->pdhg_primal_solution,
+                                              state->primal_product,
+                                              state->pdhg_dual_solution,
+                                              state->dual_product);
 
     free(ones_dual_h);
     if (params->verbose)
@@ -937,11 +887,7 @@ static void compute_next_primal_solution(pdhg_solver_state_t *state,
                                          const double reflection_coefficient,
                                          bool is_major)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->current_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->current_dual_solution, state->dual_product);
 
     double step = state->step_size / state->primal_weight;
 
@@ -986,15 +932,7 @@ static void compute_next_dual_solution(pdhg_solver_state_t *state,
                                        const double reflection_coefficient,
                                        bool is_major)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol, state->reflected_primal_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-
-    cupdlpx_spmv(state,
-                 state->matA,
-                 state->vec_primal_sol,
-                 state->vec_primal_prod,
-                 state->primal_spmv_buffer,
-                 state->primal_spmv_plan);
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->reflected_primal_solution, state->primal_product);
 
     double step = state->step_size * state->primal_weight;
 
@@ -1137,11 +1075,7 @@ static void compute_fixed_point_error(pdhg_solver_state_t *state)
         state->num_variables,
         state->num_constraints);
 
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->delta_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->delta_dual_solution, state->dual_product);
 
     double interaction, movement;
 
@@ -1174,28 +1108,14 @@ void pdhg_solver_state_free(pdhg_solver_state_t *state)
         return;
     }
 
-    if (state->matA)
-        CUSPARSE_CHECK(cusparseDestroySpMat(state->matA));
-    if (state->matAt)
-        CUSPARSE_CHECK(cusparseDestroySpMat(state->matAt));
-    if (state->vec_primal_sol)
-        CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_primal_sol));
-    if (state->vec_dual_sol)
-        CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_dual_sol));
-    if (state->vec_primal_prod)
-        CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_primal_prod));
-    if (state->vec_dual_prod)
-        CUSPARSE_CHECK(cusparseDestroyDnVec(state->vec_dual_prod));
-    cupdlpx_spmv_release(state->primal_spmv_descr, state->primal_spmv_plan);
-    cupdlpx_spmv_release(state->dual_spmv_descr, state->dual_spmv_plan);
-    if (state->primal_spmv_buffer)
-        CUDA_CHECK(cudaFree(state->primal_spmv_buffer));
-    if (state->dual_spmv_buffer)
-        CUDA_CHECK(cudaFree(state->dual_spmv_buffer));
+    if (state->spmv_ctx)
+        cupdlpx_spmv_ctx_destroy(state->spmv_ctx);
     if (state->sparse_handle)
         CUSPARSE_CHECK(cusparseDestroy(state->sparse_handle));
     if (state->blas_handle)
         CUBLAS_CHECK(cublasDestroy(state->blas_handle));
+    if (state->stream)
+        CUDA_CHECK(cudaStreamDestroy(state->stream));
 
     if (state->variable_lower_bound)
         CUDA_CHECK(cudaFree(state->variable_lower_bound));
@@ -1308,11 +1228,7 @@ static cupdlpx_result_t *create_result_from_state(pdhg_solver_state_t *state, co
     cupdlpx_result_t *results = (cupdlpx_result_t *)safe_calloc(1, sizeof(cupdlpx_result_t));
 
     // Compute reduced cost
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    cupdlpx_spmv(
-        state, state->matAt, state->vec_dual_sol, state->vec_dual_prod, state->dual_spmv_buffer, state->dual_spmv_plan);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->pdhg_dual_solution, state->dual_product);
 
     compute_and_rescale_reduced_cost_kernel<<<state->num_blocks_primal, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->dual_slack,
@@ -1664,6 +1580,14 @@ static pdhg_solver_state_t *initialize_primal_feas_polish_state(const pdhg_solve
     primal_state->relative_objective_gap = 0.0;
     primal_state->objective_gap = 0.0;
 
+    primal_state->spmv_ctx = cupdlpx_spmv_ctx_create(primal_state->sparse_handle,
+                                                      primal_state->constraint_matrix,
+                                                      primal_state->constraint_matrix_t,
+                                                      primal_state->pdhg_primal_solution,
+                                                      primal_state->primal_product,
+                                                      primal_state->pdhg_dual_solution,
+                                                      primal_state->dual_product);
+
     return primal_state;
 }
 
@@ -1695,6 +1619,7 @@ void primal_feas_polish_state_free(pdhg_solver_state_t *state)
     SAFE_CUDA_FREE(state->dual_residual);
     SAFE_CUDA_FREE(state->delta_primal_solution);
     SAFE_CUDA_FREE(state->delta_dual_solution);
+    cupdlpx_spmv_ctx_destroy(state->spmv_ctx);
     free(state);
 }
 
@@ -1796,6 +1721,15 @@ static pdhg_solver_state_t *initialize_dual_feas_polish_state(const pdhg_solver_
     dual_state->absolute_primal_residual = 0.0;
     dual_state->relative_objective_gap = 0.0;
     dual_state->objective_gap = 0.0;
+
+    dual_state->spmv_ctx = cupdlpx_spmv_ctx_create(dual_state->sparse_handle,
+                                                    dual_state->constraint_matrix,
+                                                    dual_state->constraint_matrix_t,
+                                                    dual_state->pdhg_primal_solution,
+                                                    dual_state->primal_product,
+                                                    dual_state->pdhg_dual_solution,
+                                                    dual_state->dual_product);
+
     return dual_state;
 }
 
@@ -1837,6 +1771,7 @@ void dual_feas_polish_state_free(pdhg_solver_state_t *state)
     SAFE_CUDA_FREE(state->dual_residual);
     SAFE_CUDA_FREE(state->delta_primal_solution);
     SAFE_CUDA_FREE(state->delta_dual_solution);
+    cupdlpx_spmv_ctx_destroy(state->spmv_ctx);
     free(state);
 }
 

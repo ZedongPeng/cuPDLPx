@@ -2,19 +2,13 @@
 
 #include <cusparse.h>
 
-#if defined(CUSPARSE_VER_MAJOR) && defined(CUSPARSE_VER_MINOR) && defined(CUSPARSE_VER_PATCH)
-#define CUPDLPX_CUSPARSE_GTE_13_1U1                                                                                \
-    ((CUSPARSE_VER_MAJOR > 13) ||                                                                                  \
-     (CUSPARSE_VER_MAJOR == 13 &&                                                                                  \
-      (CUSPARSE_VER_MINOR > 1 || (CUSPARSE_VER_MINOR == 1 && CUSPARSE_VER_PATCH >= 1))))
-#elif defined(CUSPARSE_VERSION)
-// Fallback encoding assumption: major*1000 + minor*10 + patch
-#define CUPDLPX_CUSPARSE_GTE_13_1U1 (CUSPARSE_VERSION >= 13101)
+// cusparseSpMVOp_bufferSize was introduced in cuSPARSE 12.7.3 (CUDA 13.1 Update 1).
+// CUSPARSE_VERSION encoding: major*1000 + minor*100 + patch.
+#if defined(CUSPARSE_VERSION) && CUSPARSE_VERSION >= 12703
+#define CUPDLPX_HAS_SPMVOP 1
 #else
-#define CUPDLPX_CUSPARSE_GTE_13_1U1 0
+#define CUPDLPX_HAS_SPMVOP 0
 #endif
-
-#define CUPDLPX_HAS_SPMVOP CUPDLPX_CUSPARSE_GTE_13_1U1
 
 #if !CUPDLPX_HAS_SPMVOP
 typedef void *cusparseSpMVOpDescr_t;
