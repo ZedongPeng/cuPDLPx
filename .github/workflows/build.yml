@@ -24,6 +24,7 @@ jobs:
         with:
           cuda: ${{ matrix.cuda }}
           linux-local-args: '["--toolkit"]'
+          use-github-cache: 'false'
 
       - name: CUDA info
         run: |
