@@ -18,7 +18,9 @@ It provides a high-level, Pythonic API for constructing, modifying, and solving 
 - An NVIDIA GPU with CUDA support (≥12.4 required)  
 - A C/C++ toolchain with GCC and NVCC  
 
-> **SpMV backend** is selected automatically based on cuSPARSE version (`cusparseSpMV` for < 13.1 Update 1; `cusparseSpMVOp` for >= 13.1 Update 1).
+> **SpMV backend** is selected automatically at compile time based on cuSPARSE version:
+> - `cusparseSpMV` — CUDA 12.4 – 13.1 (cuSPARSE < 12.7.3)
+> - `cusparseSpMVOp` — CUDA 13.1 Update 1+ (cuSPARSE ≥ 12.7.3)
 
 
 ### Install

@@ -29,7 +29,9 @@ Our work is presented in two papers:
 * **GPU:** NVIDIA GPU with CUDA 12.4+.
 * **Build Tools:** CMake (≥ 3.20), GCC, NVCC.
 
-> **SpMV backend** is selected automatically based on cuSPARSE version (`cusparseSpMV` for < 13.1 Update 1; `cusparseSpMVOp` for >= 13.1 Update 1).
+> **SpMV backend** is selected automatically at compile time based on cuSPARSE version:
+> - `cusparseSpMV` — CUDA 12.4 – 13.1 (cuSPARSE < 12.7.3)
+> - `cusparseSpMVOp` — CUDA 13.1 Update 1+ (cuSPARSE ≥ 12.7.3)
 
 ### Build from Source
 Clone the repository and compile the project using CMake.
