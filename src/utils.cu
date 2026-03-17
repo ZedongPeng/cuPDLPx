@@ -25,9 +25,6 @@ limitations under the License.
 std::mt19937 gen(1);
 std::normal_distribution<double> dist(0.0, 1.0);
 
-const double HOST_ONE = 1.0;
-const double HOST_ZERO = 0.0;
-
 void *safe_malloc(size_t size)
 {
     void *ptr = malloc(size);
@@ -73,8 +70,8 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
                                        int max_iterations,
                                        double tolerance)
 {
-    int m = A->num_rows;
-    int n = A->num_cols;
+    const int m = A->num_rows;
+    const int n = A->num_cols;
     double *eigenvector_d, *next_eigenvector_d, *dual_product_d;
 
     CUDA_CHECK(cudaMalloc(&eigenvector_d, m * sizeof(double)));
@@ -92,7 +89,6 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
 
     double sigma_max_sq = 1.0;
     const double one = 1.0;
-    const double zero = 0.0;
 
     cusparseSpMatDescr_t matA, matAT;
     CUSPARSE_CHECK(cusparseCreateCsr(&matA,
@@ -123,36 +119,25 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecNextEigen, m, next_eigenvector_d, CUDA_R_64F));
     CUSPARSE_CHECK(cusparseCreateDnVec(&vecDual, n, dual_product_d, CUDA_R_64F));
 
+    void *descrAT = NULL;
+    void *descrA = NULL;
+    void *planAT = NULL;
+    void *planA = NULL;
+
     void *dBufferAT = NULL;
     void *dBufferA = NULL;
     size_t bufferSizeAT = 0, bufferSizeA = 0;
-    CUSPARSE_CHECK(cusparseSpMV_bufferSize(sparse_handle,
-                                           CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                           &one,
-                                           matAT,
-                                           vecNextEigen,
-                                           &zero,
-                                           vecDual,
-                                           CUDA_R_64F,
-                                           CUSPARSE_SPMV_CSR_ALG2,
-                                           &bufferSizeAT));
-    CUSPARSE_CHECK(cusparseSpMV_bufferSize(sparse_handle,
-                                           CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                           &one,
-                                           matA,
-                                           vecDual,
-                                           &zero,
-                                           vecEigen,
-                                           CUDA_R_64F,
-                                           CUSPARSE_SPMV_CSR_ALG2,
-                                           &bufferSizeA));
+    cupdlpx_spmv_buffer_size(sparse_handle, matAT, vecNextEigen, vecDual, &bufferSizeAT);
+    cupdlpx_spmv_buffer_size(sparse_handle, matA, vecDual, vecEigen, &bufferSizeA);
 
     CUDA_CHECK(cudaMalloc(&dBufferAT, bufferSizeAT));
     CUDA_CHECK(cudaMalloc(&dBufferA, bufferSizeA));
 
+    cupdlpx_spmv_prepare(sparse_handle, matAT, vecNextEigen, vecDual, dBufferAT, &descrAT, &planAT);
+    cupdlpx_spmv_prepare(sparse_handle, matA, vecDual, vecEigen, dBufferA, &descrA, &planA);
+
     for (int i = 0; i < max_iterations; ++i)
     {
-
         CUDA_CHECK(cudaMemcpy(next_eigenvector_d, eigenvector_d, m * sizeof(double), cudaMemcpyDeviceToDevice));
         double eigenvector_norm;
         CUBLAS_CHECK(cublasDnrm2_v2_64(blas_handle, m, next_eigenvector_d, 1, &eigenvector_norm));
@@ -160,27 +145,8 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
         double inv_eigenvector_norm = 1.0 / eigenvector_norm;
         CUBLAS_CHECK(cublasDscal(blas_handle, m, &inv_eigenvector_norm, next_eigenvector_d, 1));
 
-        CUSPARSE_CHECK(cusparseSpMV(sparse_handle,
-                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                    &one,
-                                    matAT,
-                                    vecNextEigen,
-                                    &zero,
-                                    vecDual,
-                                    CUDA_R_64F,
-                                    CUSPARSE_SPMV_CSR_ALG2,
-                                    dBufferAT));
-
-        CUSPARSE_CHECK(cusparseSpMV(sparse_handle,
-                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                    &one,
-                                    matA,
-                                    vecDual,
-                                    &zero,
-                                    vecEigen,
-                                    CUDA_R_64F,
-                                    CUSPARSE_SPMV_CSR_ALG2,
-                                    dBufferA));
+        cupdlpx_spmv_execute(sparse_handle, matAT, vecNextEigen, vecDual, dBufferAT, planAT);
+        cupdlpx_spmv_execute(sparse_handle, matA, vecDual, vecEigen, dBufferA, planA);
 
         CUBLAS_CHECK(cublasDdot(blas_handle, m, next_eigenvector_d, 1, eigenvector_d, 1, &sigma_max_sq));
 
@@ -197,6 +163,8 @@ double estimate_maximum_singular_value(cusparseHandle_t sparse_handle,
 
     CUDA_CHECK(cudaFree(dBufferAT));
     CUDA_CHECK(cudaFree(dBufferA));
+    cupdlpx_spmv_release(descrAT, planAT);
+    cupdlpx_spmv_release(descrA, planA);
     CUSPARSE_CHECK(cusparseDestroySpMat(matA));
     CUSPARSE_CHECK(cusparseDestroySpMat(matAT));
     CUSPARSE_CHECK(cusparseDestroyDnVec(vecEigen));
@@ -341,7 +309,6 @@ void set_default_parameters(pdhg_parameters_t *params)
     params->termination_evaluation_frequency = 200;
     params->feasibility_polishing = false;
     params->reflection_coefficient = 1.0;
-
     params->sv_max_iter = 5000;
     params->sv_tol = 1e-4;
 
@@ -506,6 +473,7 @@ void print_initial_info(const pdhg_parameters_t *params, lp_problem_t *problem)
     printf("  time_limit         : %.2f sec\n", params->termination_criteria.time_sec_limit);
     printf("  eps_opt            : %.1e\n", params->termination_criteria.eps_optimal_relative);
     printf("  eps_feas           : %.1e\n", params->termination_criteria.eps_feasible_relative);
+    printf("  spmv_backend       : %s (auto)\n", cupdlpx_use_spmvop_by_default() ? "cusparseSpMVOp" : "cusparseSpMV");
     if (params->optimality_norm != default_params.optimality_norm)
     {
         printf("  optimality_norm    : %s\n", params->optimality_norm == NORM_TYPE_L_INF ? "L_inf" : "L2");
@@ -781,32 +749,8 @@ static double get_vector_sum(cublasHandle_t handle, int n, double *ones_d, const
 
 void compute_residual(pdhg_solver_state_t *state, norm_type_t optimality_norm)
 {
-    cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution);
-    cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution);
-    cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product);
-    cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product);
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matA,
-                                state->vec_primal_sol,
-                                &HOST_ZERO,
-                                state->vec_primal_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->primal_spmv_buffer));
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matAt,
-                                state->vec_dual_sol,
-                                &HOST_ZERO,
-                                state->vec_dual_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->dual_spmv_buffer));
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->pdhg_primal_solution, state->primal_product);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->pdhg_dual_solution, state->dual_product);
 
     compute_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual,
@@ -906,32 +850,8 @@ void compute_infeasibility_information(pdhg_solver_state_t *state)
     double dual_ray_inf_norm =
         get_vector_inf_norm(state->blas_handle, state->num_constraints, state->delta_dual_solution);
 
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol, state->delta_primal_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->delta_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matA,
-                                state->vec_primal_sol,
-                                &HOST_ZERO,
-                                state->vec_primal_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->primal_spmv_buffer));
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matAt,
-                                state->vec_dual_sol,
-                                &HOST_ZERO,
-                                state->vec_dual_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->dual_spmv_buffer));
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->delta_primal_solution, state->primal_product);
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->delta_dual_solution, state->dual_product);
 
     CUBLAS_CHECK(cublasDdot(state->blas_handle,
                             state->num_variables,
@@ -1312,19 +1232,7 @@ void compute_primal_feas_polish_residual(pdhg_solver_state_t *state,
                                          const pdhg_solver_state_t *ori_state,
                                          norm_type_t optimality_norm)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_sol, state->pdhg_primal_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_primal_prod, state->primal_product));
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matA,
-                                state->vec_primal_sol,
-                                &HOST_ZERO,
-                                state->vec_primal_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->primal_spmv_buffer));
+    cupdlpx_spmv_Ax(state->sparse_handle, state->spmv_ctx, state->pdhg_primal_solution, state->primal_product);
 
     compute_primal_feas_polish_residual_kernel<<<state->num_blocks_dual, THREADS_PER_BLOCK, 0, state->stream>>>(
         state->primal_residual,
@@ -1365,19 +1273,7 @@ void compute_dual_feas_polish_residual(pdhg_solver_state_t *state,
                                        const pdhg_solver_state_t *ori_state,
                                        norm_type_t optimality_norm)
 {
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_sol, state->pdhg_dual_solution));
-    CUSPARSE_CHECK(cusparseDnVecSetValues(state->vec_dual_prod, state->dual_product));
-
-    CUSPARSE_CHECK(cusparseSpMV(state->sparse_handle,
-                                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                &HOST_ONE,
-                                state->matAt,
-                                state->vec_dual_sol,
-                                &HOST_ZERO,
-                                state->vec_dual_prod,
-                                CUDA_R_64F,
-                                CUSPARSE_SPMV_CSR_ALG2,
-                                state->dual_spmv_buffer));
+    cupdlpx_spmv_ATx(state->sparse_handle, state->spmv_ctx, state->pdhg_dual_solution, state->dual_product);
 
     compute_dual_feas_polish_residual_kernel<<<state->num_blocks_primal_dual, THREADS_PER_BLOCK>>>(
         state->dual_residual,

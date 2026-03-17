@@ -16,6 +16,7 @@ limitations under the License.
 
 #pragma once
 
+#include "cusparse_compat.h"
 #include "internal_types.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -63,9 +64,6 @@ extern "C"
 
 #define THREADS_PER_BLOCK 256
 
-    extern const double HOST_ONE;
-    extern const double HOST_ZERO;
-
     void *safe_malloc(size_t size);
 
     void *safe_calloc(size_t num, size_t size);
@@ -78,6 +76,45 @@ extern "C"
                                            const cu_sparse_matrix_csr_t *AT,
                                            int max_iterations,
                                            double tolerance);
+
+    bool cupdlpx_use_spmvop_by_default(void);
+
+    void cupdlpx_spmv_buffer_size(cusparseHandle_t sparse_handle,
+                                  cusparseSpMatDescr_t mat,
+                                  cusparseDnVecDescr_t vec_x,
+                                  cusparseDnVecDescr_t vec_y,
+                                  size_t *buffer_size);
+
+    void cupdlpx_spmv_prepare(cusparseHandle_t sparse_handle,
+                              cusparseSpMatDescr_t mat,
+                              cusparseDnVecDescr_t vec_x,
+                              cusparseDnVecDescr_t vec_y,
+                              void *buffer,
+                              void **descr,
+                              void **plan);
+
+    void cupdlpx_spmv_release(void *descr, void *plan);
+
+    void cupdlpx_spmv_execute(cusparseHandle_t sparse_handle,
+                              cusparseSpMatDescr_t mat,
+                              cusparseDnVecDescr_t vec_x,
+                              cusparseDnVecDescr_t vec_y,
+                              void *buffer,
+                              void *plan);
+
+    void *cupdlpx_spmv_ctx_create(cusparseHandle_t sparse_handle,
+                                  const cu_sparse_matrix_csr_t *A,
+                                  const cu_sparse_matrix_csr_t *AT,
+                                  const double *ax_x_init,
+                                  double *ax_y_init,
+                                  const double *atx_x_init,
+                                  double *atx_y_init);
+
+    void cupdlpx_spmv_ctx_destroy(void *ctx);
+
+    void cupdlpx_spmv_Ax(cusparseHandle_t sparse_handle, void *ctx, const double *x, double *y);
+
+    void cupdlpx_spmv_ATx(cusparseHandle_t sparse_handle, void *ctx, const double *x, double *y);
 
     void compute_interaction_and_movement(pdhg_solver_state_t *solver_state, double *interaction, double *movement);
 
